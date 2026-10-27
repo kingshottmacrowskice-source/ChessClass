@@ -53,7 +53,12 @@ export class Voice {
     }
   }
 
-  /** Pick the most natural available Chinese voice instead of the OS default. */
+  /**
+   * Pick the most natural available Chinese voice instead of the OS default.
+   * 神经/在线音色（微软 Edge 的 "Online (Natural)"、Chrome 的 "Natural"）远比
+   * 离线 SAPI 音色自然——这正是浏览器语音“好听”与否的关键：同一个系统里，
+   * "Microsoft Xiaoxiao Online (Natural)" 和 "Microsoft Xiaoxiao" 是两回事。
+   */
   private browserVoice(): SpeechSynthesisVoice | undefined {
     const synth = window.speechSynthesis;
     if (!synth) return undefined;
@@ -62,17 +67,27 @@ export class Voice {
       (v) => /^zh/i.test(v.lang) || /普通话|中文|國語|Chinese/i.test(v.name),
     );
     const pool = zh.length ? zh : voices;
-    const prefer = (re: RegExp) => pool.find((v) => re.test(v.name));
+    const isNeural = (v: SpeechSynthesisVoice) =>
+      /online|natural|neural|在线|自然|神经/i.test(v.name);
+    const neural = (re: RegExp) =>
+      pool.find((v) => isNeural(v) && re.test(v.name));
+    const any = (re: RegExp) => pool.find((v) => re.test(v.name));
     return (
-      // 微软 Azure 神经网络音色（Edge/Windows），少女、清脆，最像真人。
-      prefer(/Xiaoxiao|Xiaoyi/i) ??
-      prefer(/Yunxi|Yunyang/i) ??
-      // Chrome 自带的中文神经网络音色。
-      prefer(/Google 普通话|Google 國語|Google 中文/i) ??
-      // macOS / iOS 中文音色。
-      prefer(/Ting-Ting|Sin-ji|Mei-Jia/i) ??
-      // 其它常见中文音色兜底。
-      prefer(/Huihui|Kangkang|Yaoyao/i) ??
+      // 少女音（晓晓/晓伊）在线神经版，最贴合“大肥鱼”的女仆少女设定。
+      neural(/Xiaoxiao|Xiaoyi/i) ??
+      // 其它 Azure 女声神经音色兜底（晓涵/晓墨/晓睿/晓颜/晓辰）。
+      neural(/Xiaohan|Xiaomo|Xiaorui|Xiaoyan|Xiaochen/i) ??
+      // 男声神经音色（云希/云扬/云健/云枫）。
+      neural(/Yunxi|Yunyang|Yunjian|Yunfeng/i) ??
+      // 任意中文神经/在线音色，仍优于离线音色。
+      pool.find(isNeural) ??
+      // Chrome 自带的中文神经音色。
+      any(/Google 普通话|Google 國語|Google 中文/i) ??
+      // macOS / iOS 中文音色（Siri 音色本身较自然）。
+      any(/Ting-Ting|Sin-ji|Mei-Jia/i) ??
+      // 离线微软中文音色兜底（没有神经音色时的最后选择）。
+      any(/Xiaoxiao|Xiaoyi|Xiaohan|Xiaomo|Xiaorui|Xiaoyan|Xiaochen/i) ??
+      any(/Yunxi|Yunyang|Huihui|Kangkang|Yaoyao/i) ??
       pool[0]
     );
   }
@@ -98,11 +113,17 @@ export class Voice {
     if (!synth) return;
     synth.cancel();
     const u = new SpeechSynthesisUtterance(text);
-    u.lang = "zh-CN";
     u.rate = this.config.rate;
     u.pitch = this.config.pitch;
     const voice = this.browserVoice();
-    if (voice) u.voice = voice;
+    if (voice) {
+      u.voice = voice;
+      // 让 lang 跟随所选音色：硬编码 zh-CN 时，某些浏览器会在音色的
+      // lang 与之不一致时退回默认机械音，白费上面的神经音色选择。
+      u.lang = voice.lang || "zh-CN";
+    } else {
+      u.lang = "zh-CN";
+    }
     synth.speak(u);
   }
 
