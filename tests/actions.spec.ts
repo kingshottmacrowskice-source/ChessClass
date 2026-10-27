@@ -1,4 +1,39 @@
 import { test, expect } from "@playwright/test";
+test("calm idle sheet keeps feet planted across all six frames", async ({
+  page,
+}) => {
+  await page.goto("/#actions");
+  await expect(page.locator(".preview-character canvas")).toHaveAttribute(
+    "data-loaded",
+    "true",
+  );
+  await expect(
+    page.getByRole("link", { name: /查看当前动作原始动画表/ }),
+  ).toHaveAttribute("href", "/live/actions-v2/idle-calm-v3.png");
+  const bottoms: number[] = [];
+  for (let f = 1; f <= 6; f++) {
+    await page
+      .getByRole("button", { name: `查看第${f}帧`, exact: true })
+      .click();
+    bottoms.push(
+      await page
+        .locator(".preview-character canvas")
+        .evaluate((canvas: HTMLCanvasElement) => {
+          const pixels = canvas
+            .getContext("2d")!
+            .getImageData(0, 0, canvas.width, canvas.height).data;
+          for (let y = canvas.height - 1; y >= 0; y--)
+            for (let x = 0; x < canvas.width; x++)
+              if (pixels[(y * canvas.width + x) * 4 + 3] > 160) return y;
+          return -1;
+        }),
+    );
+  }
+  expect(Math.min(...bottoms)).toBeGreaterThan(0);
+  expect(Math.max(...bottoms) - Math.min(...bottoms)).toBeLessThanOrEqual(1);
+  await page.getByRole("button", { name: "查看第1帧", exact: true }).click();
+  await page.screenshot({ path: "test-results/calm-idle.png", fullPage: true });
+});
 test("action studio loads every clip, supports stepping and timed speech", async ({
   page,
 }) => {

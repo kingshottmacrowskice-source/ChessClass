@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import Sprite from "./Sprite";
-import { actions } from "./actions";
+import { actions, actionAsset, frameHold } from "./actions";
 import { useSpeechBubble, bubbleDuration } from "./speech";
 import { useWalker } from "./motion";
 import "./live.css";
@@ -20,14 +20,17 @@ export default function ActionPreview() {
   const walker = useWalker();
   useEffect(() => {
     if (!playing) return;
-    const t = setTimeout(() => {
-      if (frame === 5) {
-        if (repeat) setFrame(0);
-        else setPlaying(false);
-      } else setFrame((v) => v + 1);
-    }, 1000 / fps);
+    const t = setTimeout(
+      () => {
+        if (frame === 5) {
+          if (repeat) setFrame(0);
+          else setPlaying(false);
+        } else setFrame((v) => v + 1);
+      },
+      (1000 / fps) * frameHold(selected, frame),
+    );
     return () => clearTimeout(t);
-  }, [playing, repeat, frame, fps]);
+  }, [playing, repeat, frame, fps, selected]);
   useEffect(() => {
     if (!travel || !playing) return;
     let active = true;
@@ -217,11 +220,7 @@ export default function ActionPreview() {
           <p>
             点击下方缩略帧可定格检查。红点是脚底锚点；攻击和落子在直播中只播放一次。
           </p>
-          <a
-            href={"/live/actions-v2/" + actions[selected].key + ".png"}
-            target="_blank"
-            rel="noreferrer"
-          >
+          <a href={actionAsset(selected)} target="_blank" rel="noreferrer">
             查看当前动作原始动画表 ↗
           </a>
         </aside>

@@ -1,11 +1,13 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Chess, DEFAULT_POSITION } from "chess.js";
 import { Engine, type Analysis } from "../core/engine";
 import { playUci } from "../core/game";
 import { model, resolveMove, uciOf, VoteRound } from "./core";
 import "./live.css";
-import PixelPiece from "./PixelPiece";
+import ChessPiece from "./ChessPiece";
+import BoardVotes from "./BoardVotes";
 import Sprite from "./Sprite";
+import { useBoardProjection } from "./projection";
 import { useSpeechBubble } from "./speech";
 import { actionFrame, FRAME_MS } from "./actions";
 import {
@@ -14,14 +16,56 @@ import {
   localCommentary,
   type CommentaryKind,
 } from "./commentary";
-import { useWalker } from "./motion";
+import { useWalker, roamTarget, REST_MIN_MS, REST_RANGE_MS } from "./motion";
 import { readModelConfig, type ModelConfig } from "./core";
-type Chat = { id: string; user: string; name: string; text: string };
+import { MOVE_MS, easeMove, movingFrom } from "./transition";
+type Chat = {
+  id: string;
+  user: string;
+  name: string;
+  text: string;
+  feedback?: string;
+};
 const point = (s: string) => ({
   x: (s.charCodeAt(0) - 97) * 12.5 + 6.25,
   y: (8 - Number(s[1])) * 12.5 + 6.25,
 });
 export default function LiveMode({ exit }: { exit: () => void }) {
+  const {
+    ref: projectionRef,
+    project,
+    ready: projectionReady,
+  } = useBoardProjection();
+  const [visualMove, setVisualMove] = useState<ReturnType<
+    Chess["move"]
+  > | null>(null);
+  const [moveProgress, setMoveProgress] = useState(1);
+  const [lastMove, setLastMove] = useState<ReturnType<Chess["move"]> | null>(
+    null,
+  );
+  useEffect(() => {
+    if (!visualMove) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setMoveProgress(1);
+      setVisualMove(null);
+      return;
+    }
+    setMoveProgress(0);
+    const started = performance.now();
+    let frame = 0;
+    const tick = () => {
+      const elapsed = (performance.now() - started) / MOVE_MS;
+      const progress = easeMove(elapsed);
+      setMoveProgress(progress);
+      if (elapsed < 1) frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    const timer = setTimeout(() => setVisualMove(null), MOVE_MS);
+    return () => {
+      clearTimeout(timer);
+      cancelAnimationFrame(frame);
+    };
+  }, [visualMove]);
   const game = useRef(new Chess()),
     engine = useRef(new Engine()),
     round = useRef(new VoteRound());
@@ -143,22 +187,38 @@ export default function LiveMode({ exit }: { exit: () => void }) {
     chatBuffer.current.push(s);
     chatBuffer.current = chatBuffer.current.slice(-30);
   };
+  const feedback = (id: string, text: string) => {
+    setLogs((items) =>
+      items.map((m) => (m.id === id ? { ...m, feedback: text } : m)),
+    );
+  };
+  const acceptVote = (m: Chat, move: string) => {
+    const previous = round.current.votes.get(m.user);
+    if (!m.user.trim()) return "缺少观众 ID，未计票";
+    if (previous) return `本轮已投 ${previous}，不能重复投票`;
+    if (!round.current.add(m.user, move, Date.now())) return "本轮已截止";
+    refresh((v) => v + 1);
+    return `已计票 · ${move}`;
+  };
   const ingest = (m: Chat) => {
-    setLogs((l) => [...l, m].slice(-80));
     event(`${m.name}: ${m.text}`);
-    if (
-      game.current.turn() !== "w" ||
-      busy.current ||
-      game.current.isGameOver()
-    )
-      return;
-    const move = resolveMove(game.current, m.text);
-    if (move) {
-      if (round.current.add(m.user, move, Date.now())) refresh((v) => v + 1);
-    } else if (aiRef.current) {
-      queue.current.push(m);
-      queue.current = queue.current.slice(-30);
+    let result = "";
+    if (game.current.isGameOver()) result = "对局已结束";
+    else if (game.current.turn() !== "w" || busy.current)
+      result = "已收到 · 下轮白方回合再投票";
+    else {
+      const move = resolveMove(game.current, m.text);
+      if (move) result = acceptVote(m, move);
+      else if (aiRef.current) {
+        const displaced =
+          queue.current.length >= 30 ? queue.current.shift() : undefined;
+        if (displaced)
+          feedback(displaced.id, "识别繁忙，请用 e2e4 等明确走法重发");
+        queue.current.push(m);
+        result = "正在识别走法…";
+      } else result = "未计票 · 闲聊或走法不明确，可发 e4 / 马到f3";
     }
+    setLogs((l) => [...l, { ...m, feedback: result }].slice(-80));
   };
   const ingestRef = useRef(ingest);
   ingestRef.current = ingest;
@@ -251,6 +311,7 @@ export default function LiveMode({ exit }: { exit: () => void }) {
         .then((raw) => {
           if (
             token !== epoch.current ||
+            !aiRef.current ||
             busy.current ||
             position !== game.current.fen()
           )
@@ -258,19 +319,34 @@ export default function LiveMode({ exit }: { exit: () => void }) {
           const items = JSON.parse(
             raw.replace(/^```(?:json)?\s*|\s*```$/g, ""),
           );
-          if (!Array.isArray(items)) return;
+          if (!Array.isArray(items)) throw new Error("走法识别返回格式无效");
+          const resolved = new Set<string>();
           for (const item of items) {
+            if (!item || typeof item.id !== "string" || resolved.has(item.id))
+              continue;
             const m = batch.find((m) => m.id === item.id);
             const move =
               typeof item.move === "string"
                 ? resolveMove(game.current, item.move)
                 : null;
-            if (m && move) round.current.add(m.user, move, Date.now());
+            if (m && move) {
+              resolved.add(m.id);
+              feedback(m.id, acceptVote(m, move));
+            }
+          }
+          for (const m of batch) {
+            if (!resolved.has(m.id))
+              feedback(m.id, "未计票 · 闲聊或走法不明确");
           }
           refresh((v) => v + 1);
         })
         .catch((e) => {
-          if (alive.current && token === epoch.current) setError(String(e));
+          if (alive.current && token === epoch.current && aiRef.current) {
+            setError(String(e));
+            batch.forEach((m) =>
+              feedback(m.id, "识别失败，可用 e2e4 等明确走法重发"),
+            );
+          }
         })
         .finally(() => (parseBusy.current = false));
     }, 1500);
@@ -325,6 +401,9 @@ export default function LiveMode({ exit }: { exit: () => void }) {
     if (list.length) setVideo(list[Math.floor(Math.random() * list.length)]);
   };
   const afterMove = (m: ReturnType<Chess["move"]>) => {
+    setMoveProgress(0);
+    setVisualMove(m);
+    setLastMove(m);
     setFen(game.current.fen());
     const text = game.current.isCheckmate()
       ? "将死！这一局结束啦。"
@@ -357,7 +436,7 @@ export default function LiveMode({ exit }: { exit: () => void }) {
     };
     const travel = async (to: { x: number; y: number }, carry = false) => {
       setAction(carry ? "carry" : "walk");
-      if (!(await walkTo(to)) || token !== epoch.current)
+      if (!(await walkTo(to, 2.2)) || token !== epoch.current)
         throw new Error("cancelled");
     };
     try {
@@ -389,37 +468,30 @@ export default function LiveMode({ exit }: { exit: () => void }) {
         narrate(a, "audience", lastAudienceMove);
       setPhase(m.captured ? "深深准备吃子" : "深深搬棋中");
       setAction("walk");
-      if (m.captured && style !== "ram") {
-        await travel(to);
-        setAction(style);
-        await pause(420);
-        say(style === "kick" ? "让一让，这格归我了！" : "瞄准——棋盘清理！");
-        const square = m.isEnPassant() ? m.to[0] + m.from[1] : m.to;
-        setHidden([square]);
-        setVictim({ square, piece: m.captured, style });
-        setEffect("impact");
-        await pause(420);
-        setEffect("");
-      }
       await travel(from);
       setHidden((h) => [...h, m.from]);
       setCarried(m.piece);
       setAction("carry");
-      await pause(300);
+      await pause(140);
       await travel(to, true);
-      if (m.captured && style === "ram") {
+      if (m.captured) {
+        setAction(style === "ram" ? "slide" : style);
+        await pause(280);
         const square = m.isEnPassant() ? m.to[0] + m.from[1] : m.to;
         setHidden((h) => [...h, square]);
         setVictim({ square, piece: m.captured, style });
+        setEffect("impact");
+        await pause(280);
       }
       setAction(Math.random() < 0.5 ? "drop" : "slide");
-      setEffect("impact");
-      await pause(840);
+      setPhase(`深深落子 · ${m.san}`);
+      await pause(560);
       setCarried("");
       setHidden([]);
       setVictim(null);
       setEffect("");
       afterMove(playUci(game.current, a.bestmove));
+      await pause(MOVE_MS);
       if (shouldComment && commentKind === "self")
         narrate(a, "self", lastAudienceMove);
       setAction("idle");
@@ -453,30 +525,71 @@ export default function LiveMode({ exit }: { exit: () => void }) {
       if (!winner) return;
       round.current = new VoteRound();
       queue.current = [];
+      setLogs((items) =>
+        items.map((m) =>
+          m.feedback === "正在识别走法…"
+            ? { ...m, feedback: "本轮已结束，未计票" }
+            : m,
+        ),
+      );
       refresh((v) => v + 1);
+      busy.current = true;
+      stopWalking();
+      setAction("idle");
+      setPhase("观众落子中");
+      const token = epoch.current;
       afterMove(playUci(game.current, winner));
-      if (!game.current.isGameOver()) void runRef.current();
-      else setPhase("对局结束");
+      setTimeout(() => {
+        if (!alive.current || token !== epoch.current) return;
+        busy.current = false;
+        if (!game.current.isGameOver()) void runRef.current();
+        else setPhase("对局结束");
+      }, MOVE_MS);
     }, 200);
     return () => clearInterval(timer);
   }, []);
+  const actorRef = useRef(actor);
+  actorRef.current = actor;
   useEffect(() => {
-    const timer = setInterval(() => {
-      if (!busy.current && !video && !game.current.isGameOver()) {
-        setAction("walk");
-        const to = {
-          x: 6.25 + Math.floor(Math.random() * 8) * 12.5,
-          y: 18.75 + Math.floor(Math.random() * 6) * 12.5,
-        };
-        void walkTo(to).then((ok) => {
-          if (ok && !busy.current)
-            setAction(["idle", "think", "wave"][Math.floor(Math.random() * 3)]);
-        });
-      }
-    }, 12000);
-    return () => clearInterval(timer);
-  }, [video]);
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const schedule = () => {
+      timer = setTimeout(
+        async () => {
+          if (cancelled) return;
+          if (
+            !busy.current &&
+            !video &&
+            !game.current.isGameOver() &&
+            !window.matchMedia("(prefers-reduced-motion: reduce)").matches
+          ) {
+            const occupied = game.current
+              .board()
+              .flat()
+              .filter((p) => p !== null)
+              .map((p) => point(p.square));
+            const to = roamTarget(actorRef.current, occupied);
+            if (to !== actorRef.current) {
+              setAction("walk");
+              const ok = await walkTo(to);
+              if (ok && !cancelled && !busy.current) setAction("idle");
+            }
+          }
+          if (!cancelled) schedule();
+        },
+        REST_MIN_MS + Math.random() * REST_RANGE_MS,
+      );
+    };
+    schedule();
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [video, fen]);
   const reset = () => {
+    setVisualMove(null);
+    setLastMove(null);
+    setLogs([]);
     epoch.current++;
     cancelNarration();
     setLastCommentary("");
@@ -501,7 +614,8 @@ export default function LiveMode({ exit }: { exit: () => void }) {
     say("新的一局！观众先手，来吧。");
     refresh((v) => v + 1);
   };
-  const board = new Chess(fen);
+  const board = useMemo(() => new Chess(fen), [fen]);
+  const squares = useMemo(() => board.board().flat(), [board]);
   const [animationTick, setAnimationTick] = useState(0);
   useEffect(() => {
     const t = setInterval(() => setAnimationTick((v) => v + 1), FRAME_MS);
@@ -527,100 +641,224 @@ export default function LiveMode({ exit }: { exit: () => void }) {
   const tally = round.current.tally();
   void version;
   return (
-    <main className="live-page">
-      <header className="live-header">
-        <div>
-          <span className="live-eyebrow">DEEPSEEK / LIVE ARENA</span>
-          <h1>
-            深深的棋盘<span>观众 VS AI</span>
-          </h1>
-        </div>
-        <div className="live-actions">
-          <a
-            className="action-preview-link"
-            href="#actions"
-            target="_blank"
-            rel="noreferrer"
-          >
-            动作预览 ↗
-          </a>
-          <button onClick={reset}>新的一局</button>
-          <button onClick={exit}>返回分析</button>
-        </div>
-      </header>
+    <main className="live-page" aria-label="深深的棋盘">
       <div className="live-layout">
         <section className="live-stage">
           <div className="live-status">
             <span>
               <i /> {phase}
             </span>
-            <span>观众执白 · SF 深度 {depth}</span>
+            <span className="vote-clock" role="status">
+              {tally.length
+                ? `${Math.max(0, Math.ceil((round.current.deadline() - Math.max(now, round.current.last)) / 1000))} 秒后落子 · ${round.current.votes.size} 票`
+                : game.current.isGameOver()
+                  ? "对局结束"
+                  : busy.current || game.current.turn() === "b"
+                    ? "本轮投票已锁定"
+                    : "等待第一票"}
+            </span>
           </div>
-          <div className={"pixel-board " + effect}>
-            {board
-              .board()
-              .flat()
-              .map((p, i) => {
+          <div className="board-perspective" ref={projectionRef}>
+            <div className="pixel-board sculpted-board">
+              {squares.map((_, i) => {
                 const square =
                   String.fromCharCode(97 + (i % 8)) + (8 - Math.floor(i / 8));
                 return (
                   <div
                     key={square}
+                    data-square={square}
                     className={
                       "pixel-square " +
-                      ((i + Math.floor(i / 8)) % 2 ? "dark" : "light")
+                      ((i + Math.floor(i / 8)) % 2 ? "dark" : "light") +
+                      (lastMove?.from === square ? " last-from" : "") +
+                      (lastMove?.to === square ? " last-to" : "")
                     }
                   >
                     <small>{square}</small>
-                    {p && !hidden.includes(square) && (
-                      <span className={"chess-piece " + p.color}>
-                        <PixelPiece type={p.type} color={p.color} />
-                      </span>
-                    )}
                   </div>
                 );
               })}
-            {victim && (
-              <span
-                className={"flying-piece " + victim.style}
+            </div>
+            {projectionReady && <BoardVotes tally={tally} project={project} />}
+            <div
+              className="board-objects"
+              style={{ visibility: projectionReady ? "visible" : "hidden" }}
+            >
+              {squares.map((p, i) => {
+                const square =
+                  String.fromCharCode(97 + (i % 8)) + (8 - Math.floor(i / 8));
+                if (!p || hidden.includes(square)) return null;
+                const floor = point(square),
+                  at = project(floor.x, floor.y);
+                const origin = movingFrom(visualMove, square);
+                const arriving = origin !== null;
+                const from = origin ? point(origin) : floor;
+                const source = project(from.x, from.y);
+                return (
+                  <div
+                    key={square}
+                    data-piece-square={square}
+                    className="standing-piece"
+                    style={{
+                      left: arriving
+                        ? source.x + (at.x - source.x) * moveProgress
+                        : at.x,
+                      top: arriving
+                        ? source.y + (at.y - source.y) * moveProgress
+                        : at.y,
+                      width:
+                        (arriving
+                          ? source.width +
+                            (at.width - source.width) * moveProgress
+                          : at.width) * 0.76,
+                      height:
+                        (arriving
+                          ? source.width +
+                            (at.width - source.width) * moveProgress
+                          : at.width) * 0.96,
+                      zIndex: Math.round(
+                        (arriving
+                          ? source.y + (at.y - source.y) * moveProgress
+                          : at.y) * 10,
+                      ),
+                    }}
+                  >
+                    <span className="floor-shadow" />
+                    <span
+                      className={"chess-piece " + p.color}
+                      style={
+                        arriving
+                          ? {
+                              transform: `translateY(${-Math.sin(Math.PI * moveProgress) * at.width * (p.type === "n" ? 0.38 : 0.08)}px)`,
+                            }
+                          : undefined
+                      }
+                    >
+                      {" "}
+                      <ChessPiece
+                        type={
+                          arriving &&
+                          visualMove?.to === square &&
+                          moveProgress < 1
+                            ? visualMove.piece
+                            : p.type
+                        }
+                        color={p.color}
+                      />
+                    </span>
+                  </div>
+                );
+              })}{" "}
+              {visualMove?.color === "w" &&
+                visualMove.captured &&
+                moveProgress < 0.9 &&
+                (() => {
+                  const square = visualMove.isEnPassant()
+                    ? visualMove.to[0] + visualMove.from[1]
+                    : visualMove.to;
+                  const at = project(point(square).x, point(square).y);
+                  return (
+                    <div
+                      className="standing-piece captured-ghost"
+                      style={{
+                        left: at.x,
+                        top: at.y,
+                        width: at.width * 0.76,
+                        height: at.width * 0.96,
+                        zIndex: Math.round(at.y * 10) - 1,
+                        opacity: 1 - Math.max(0, (moveProgress - 0.55) / 0.35),
+                      }}
+                    >
+                      <ChessPiece type={visualMove.captured} color="b" />
+                    </div>
+                  );
+                })()}
+              {victim && (
+                <span
+                  className={"flying-piece " + victim.style}
+                  style={{
+                    left: project(
+                      point(victim.square).x,
+                      point(victim.square).y,
+                    ).x,
+                    top: project(point(victim.square).x, point(victim.square).y)
+                      .y,
+                  }}
+                >
+                  <ChessPiece type={victim.piece} color="w" />
+                </span>
+              )}
+              <div
+                className={"deepseek-actor " + pose}
+                data-moving={moving}
                 style={{
-                  left: point(victim.square).x + "%",
-                  top: point(victim.square).y + "%",
+                  left: project(actor.x, actor.y).x,
+                  top: project(actor.x, actor.y).y,
+                  width: project(actor.x, actor.y).width * 0.9,
+                  height: project(actor.x, actor.y).width * 1.125,
+                  zIndex: Math.round(project(actor.x, actor.y).y * 10),
                 }}
               >
-                <PixelPiece type={victim.piece} color="w" />
-              </span>
-            )}
-            <div
-              className={"deepseek-actor " + pose}
-              data-moving={moving}
-              style={{ left: actor.x + "%", top: actor.y + "%" }}
-            >
-              {bubble && (
-                <div
-                  className="sprite-bubble"
-                  style={
-                    actor.y < 25 ? { bottom: "auto", top: "100%" } : undefined
-                  }
-                >
-                  {bubble}
-                </div>
-              )}
-              {carried && (
-                <b className="carried-piece">
-                  <PixelPiece type={carried} />
-                </b>
-              )}
-              <Sprite frame={frame} row={row} facing={facing} />
-              <span className="actor-shadow" />
-              {action === "shoot" && <b className="muzzle">✦ ━━━</b>}
+                {bubble && (
+                  <div
+                    className="sprite-bubble"
+                    style={
+                      actor.y < 25 ? { bottom: "auto", top: "100%" } : undefined
+                    }
+                  >
+                    {bubble}
+                  </div>
+                )}
+                {carried && (
+                  <b className="carried-piece">
+                    <ChessPiece type={carried} />
+                  </b>
+                )}
+                <Sprite frame={frame} row={row} facing={facing} />
+                <span className="actor-shadow" />
+                {action === "shoot" && <b className="muzzle">✦ ━━━</b>}
+              </div>
+              {effect && <div className="impact-flash">✦</div>}
             </div>
-            {effect && <div className="impact-flash">✦</div>}
           </div>
           <div className="board-footer">
             <span>♔ CHAT PLAYS WHITE</span>
             <span>DEEPSEEK PLAYS BLACK ♚</span>
           </div>
+        </section>
+        <aside className="live-sidebar" aria-label="走棋规则">
+          <section className="round-summary" aria-label="本轮互动">
+            <h2>{tally.length ? "观众正在选择" : phase}</h2>
+            <p>
+              {tally.length
+                ? `${round.current.votes.size} 位观众参与 · 当前领先 ${tally[0][0]}`
+                : lastMove
+                  ? `上一手 ${lastMove.color === "w" ? "观众" : "深深"} · ${lastMove.san}`
+                  : "发 e4，就能参与第一步"}
+            </p>
+            {tally.length > 0 && (
+              <div className="round-meter" aria-hidden="true">
+                <span
+                  style={{
+                    width: `${Math.max(0, Math.min(100, (round.current.deadline() - now) / 100))}%`,
+                  }}
+                />
+              </div>
+            )}
+            {tally.slice(0, 3).map(([move, count], i) => (
+              <div className="round-choice" key={move}>
+                <b>
+                  {i === 0 ? "★" : i + 1} {move}
+                </b>
+                <span>{count} 票</span>
+              </div>
+            ))}
+            <p className="latest-feedback" role="status">
+              {logs.length
+                ? `${logs[logs.length - 1].name}：${logs[logs.length - 1].feedback}`
+                : "每人每轮一票；同票时先投的走法优先。"}
+            </p>
+          </section>
           <section className="live-rules">
             <h2>第一次下棋？从这里开始</h2>
             <div>
@@ -646,29 +884,34 @@ export default function LiveMode({ exit }: { exit: () => void }) {
               王车易位：O-O / O-O-O；升变请写 e7e8q（q后 / r车 / b象 /
               n马）。歧义走法不会计票。
             </p>
-          </section>
-        </section>
-        <aside className="live-sidebar">
-          <section className="vote-panel">
-            <span className="live-eyebrow">YOUR MOVE</span>
-            <h2>
-              {tally.length
-                ? `${Math.max(0, Math.ceil((round.current.deadline() - Math.max(now, round.current.last)) / 1000))} 秒后落子`
-                : "等待第一票"}
-            </h2>
-            <p>新观众有效投票后等 10 秒 · 最长 5 分钟</p>
-            {tally.map(([m, n]) => (
-              <div className="vote-row" key={m}>
-                <b>{m}</b>
-                <div
-                  style={{ width: (n / round.current.votes.size) * 100 + "%" }}
-                />
-                <strong>{n} 票</strong>
-              </div>
-            ))}
-            <small>每人每回合一票 · 平票按先获得票的走法</small>
-          </section>
-          <section>
+          </section>{" "}
+          <p className="vote-legend">
+            <span>★ 铁锈红实线：当前第一名</span>
+            <span>森林绿虚线：其他走法</span>
+            数字代表票数。每人每回合一票，平票按先获得票的走法优先。新观众有效投票后等
+            10 秒，最长 5 分钟落子。
+          </p>
+        </aside>
+      </div>
+      <footer className="live-footer" aria-label="直播工具">
+        <div className="footer-toolbar">
+          <h2>直播工具</h2>{" "}
+          <div className="live-actions">
+            <a
+              className="action-preview-link"
+              href="#actions"
+              target="_blank"
+              rel="noreferrer"
+            >
+              动作预览 ↗
+            </a>
+            <button onClick={reset}>新的一局</button>
+            <button onClick={exit}>返回分析</button>
+          </div>{" "}
+        </div>
+        <div className="footer-panels">
+          {" "}
+          <section data-live-operator-panel>
             <h2>直播控制台</h2>
             <label>
               直播间号
@@ -714,7 +957,23 @@ export default function LiveMode({ exit }: { exit: () => void }) {
               <input
                 type="checkbox"
                 checked={ai}
-                onChange={(e) => setAi(e.target.checked)}
+                onChange={(e) => {
+                  setAi(e.target.checked);
+                  if (!e.target.checked) {
+                    queue.current = [];
+                    cancelNarration();
+                    setLogs((items) =>
+                      items.map((m) =>
+                        m.feedback === "正在识别走法…"
+                          ? {
+                              ...m,
+                              feedback: "AI 识别已关闭，可发 e4 等明确走法",
+                            }
+                          : m,
+                      ),
+                    );
+                  }
+                }}
               />
               启用廉价 AI 识别与流式聊天
             </label>
@@ -798,7 +1057,7 @@ export default function LiveMode({ exit }: { exit: () => void }) {
               </p>
             )}
           </section>
-          <section>
+          <section data-live-operator-panel>
             <h2>
               弹幕现场 <small>{logs.length} / 80</small>
             </h2>
@@ -806,6 +1065,7 @@ export default function LiveMode({ exit }: { exit: () => void }) {
               {logs.slice(-12).map((m) => (
                 <p key={m.id}>
                   <b>{m.name}</b> {m.text}
+                  <small className="chat-feedback">{m.feedback}</small>
                 </p>
               ))}
             </div>
@@ -845,19 +1105,8 @@ export default function LiveMode({ exit }: { exit: () => void }) {
               <p>{lastCommentary}</p>
             </section>
           )}
-          <section className="move-record">
-            <h2>本局记谱</h2>
-            <p>
-              {game.current.history().map((m, i) => (
-                <span key={i}>
-                  {i % 2 === 0 ? `${i / 2 + 1}. ` : ""}
-                  {m}{" "}
-                </span>
-              ))}
-            </p>
-          </section>
-        </aside>
-      </div>
+        </div>
+      </footer>
       {video && (
         <div className="ultimate-video">
           <video

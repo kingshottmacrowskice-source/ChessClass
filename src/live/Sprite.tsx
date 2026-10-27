@@ -1,5 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { actions } from "./actions";
+import { actions, actionAsset } from "./actions";
+// Keep the source artwork detail instead of reducing each frame to 32 pixels.
+const FRAME_SIZE = 512;
+const CANVAS_HEIGHT = FRAME_SIZE * 1.25;
+const FOOT_BASELINE = FRAME_SIZE * (34 / 32);
 const baselines = new WeakMap<HTMLImageElement, number[]>();
 const cache = new Map<string, Promise<HTMLImageElement>>();
 function load(src: string) {
@@ -60,7 +64,7 @@ export default function Sprite({
     let active = true;
     setImg(undefined);
     setError(false);
-    load(`/live/actions-v2/${action.key}.png`)
+    load(actionAsset(row))
       .then((value) => {
         if (active) setImg(value);
       })
@@ -74,9 +78,10 @@ export default function Sprite({
   useEffect(() => {
     const ctx = ref.current?.getContext("2d");
     if (!ctx) return;
-    ctx.clearRect(0, 0, 32, 40);
+    ctx.clearRect(0, 0, FRAME_SIZE, CANVAS_HEIGHT);
     if (!img) return;
-    ctx.imageSmoothingEnabled = false;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
     const f = Math.max(0, Math.min(5, frame));
     ctx.drawImage(
       img,
@@ -85,17 +90,18 @@ export default function Sprite({
       img.width / 3,
       img.height / 2,
       0,
-      34 -
-        ((baselines.get(img)?.[f] ?? img.height / 2) * 32) / (img.height / 2),
-      32,
-      32,
+      FOOT_BASELINE -
+        ((baselines.get(img)?.[f] ?? img.height / 2) * FRAME_SIZE) /
+          (img.height / 2),
+      FRAME_SIZE,
+      FRAME_SIZE,
     );
   }, [img, frame]);
   return (
     <canvas
       ref={ref}
-      width={32}
-      height={40}
+      width={FRAME_SIZE}
+      height={CANVAS_HEIGHT}
       className="character-sprite"
       role="img"
       aria-label={error ? "动作素材加载失败" : `深深：${action.name}`}
