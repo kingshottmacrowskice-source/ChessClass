@@ -1,3 +1,4 @@
+import { logLive } from "./log";
 export type ModelConfig = {
   parseModel: string;
   chatModel: string;
@@ -100,49 +101,77 @@ export async function model(
   signal: AbortSignal,
   onText?: (s: string) => void,
   config: ModelConfig = modelDefaults,
+  label = "model",
 ) {
-  const r = await fetch("/api/model-chat", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    signal,
-    body: JSON.stringify({
-      provider: "deepseek",
-      model: onText ? config.chatModel : config.parseModel,
-      temperature: onText ? config.temperature : 0,
-      timeout: config.timeout,
-      stream: !!onText,
-      max_tokens: onText ? config.chatTokens : config.parseTokens,
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: text },
-      ],
-    }),
+  const modelName = onText ? config.chatModel : config.parseModel;
+  logLive({
+    type: "request",
+    label,
+    provider: "deepseek",
+    model: modelName,
+    temperature: onText ? config.temperature : 0,
+    system,
+    user: text,
   });
-  if (!r.ok)
-    throw new Error(`AI 暂不可用 (${r.status})，请检查服务端 DeepSeek 密钥`);
-  if (!onText) return (await r.json()).choices[0].message.content as string;
-  const reader = r.body!.getReader(),
-    decoder = new TextDecoder();
-  let buffer = "",
-    result = "";
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop()!;
-    for (const line of lines) {
-      if (!line.startsWith("data:")) continue;
-      const data = line.slice(5).trim();
-      if (!data || data === "[DONE]") continue;
-      try {
-        const token = JSON.parse(data).choices?.[0]?.delta?.content;
-        if (token) {
-          result += token;
-          onText(result);
+  try {
+    const r = await fetch("/api/model-chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal,
+      body: JSON.stringify({
+        provider: "deepseek",
+        model: modelName,
+        temperature: onText ? config.temperature : 0,
+        timeout: config.timeout,
+        stream: !!onText,
+        max_tokens: onText ? config.chatTokens : config.parseTokens,
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: text },
+        ],
+      }),
+    });
+    if (!r.ok)
+      throw new Error(`AI 暂不可用 (${r.status})，请检查服务端 DeepSeek 密钥`);
+    let content: string;
+    if (!onText) {
+      content = (await r.json()).choices[0].message.content as string;
+    } else {
+      const reader = r.body!.getReader(),
+        decoder = new TextDecoder();
+      let buffer = "",
+        result = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop()!;
+        for (const line of lines) {
+          if (!line.startsWith("data:")) continue;
+          const data = line.slice(5).trim();
+          if (!data || data === "[DONE]") continue;
+          try {
+            const token = JSON.parse(data).choices?.[0]?.delta?.content;
+            if (token) {
+              result += token;
+              onText(result);
+            }
+          } catch {}
         }
-      } catch {}
+      }
+      content = result;
     }
+    logLive({ type: "response", label, content });
+    return content;
+  } catch (e) {
+    logLive({
+      type: "response",
+      label,
+      ...(signal.aborted
+        ? { aborted: true }
+        : { error: e instanceof Error ? e.message : String(e) }),
+    });
+    throw e;
   }
-  return result;
 }

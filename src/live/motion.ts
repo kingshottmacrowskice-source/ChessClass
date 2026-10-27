@@ -46,7 +46,8 @@ export function useWalker() {
   };
   const walkTo = (to: Point, pace = 1) => {
     stop();
-    setFacing(to.x < position.current.x ? -1 : 1);
+    if (Math.abs(to.x - position.current.x) > 0.5)
+      setFacing(to.x < position.current.x ? -1 : 1);
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
       position.current = to;
       setActor(to);
@@ -85,5 +86,10 @@ export function useWalker() {
       old?.done(false);
     };
   }, []);
-  return { actor, facing, moving, walkTo, stop };
+  const face = (toward: Point) => {
+    if (Math.abs(toward.x - position.current.x) > 0.5)
+      setFacing(toward.x < position.current.x ? -1 : 1);
+  };
+  const where = () => position.current;
+  return { actor, facing, moving, walkTo, stop, face, where };
 }

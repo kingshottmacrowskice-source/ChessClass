@@ -39,7 +39,7 @@ test("action studio loads every clip, supports stepping and timed speech", async
 }) => {
   await page.goto("/#actions");
   await expect(
-    page.getByRole("heading", { name: "深深 · 动作放映室" }),
+    page.getByRole("heading", { name: "大肥鱼 · 动作放映室" }),
   ).toBeVisible();
   await expect(page.locator(".action-card")).toHaveCount(9);
   await expect(
@@ -133,16 +133,19 @@ test("streaming speech remains until completion then expires", async ({
       );
     };
   });
+  await page.goto("/#live-settings");
+  await page
+    .getByRole("checkbox", { name: "启用廉价 AI 识别与流式聊天" })
+    .check();
   await page.goto("/#live");
-  await page.getByRole("checkbox").check();
   await page.getByLabel("测试弹幕").fill("你好");
   await page.getByRole("button", { name: "发送", exact: true }).click();
-  await expect(page.locator(".sprite-bubble")).toHaveText("嗯", {
+  await expect(page.locator(".sprite-bubble").last()).toHaveText("嗯", {
     timeout: 16000,
   });
   await page.waitForTimeout(2800);
-  await expect(page.locator(".sprite-bubble")).toHaveText("嗯");
-  await expect(page.locator(".sprite-bubble")).toHaveText("嗯，好。");
+  await expect(page.locator(".sprite-bubble").last()).toHaveText("嗯");
+  await expect(page.locator(".sprite-bubble").last()).toHaveText("嗯，好。");
   await expect(page.locator(".sprite-bubble")).toHaveCount(0, {
     timeout: 5000,
   });

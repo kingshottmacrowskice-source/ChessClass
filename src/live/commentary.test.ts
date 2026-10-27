@@ -20,8 +20,10 @@ describe("live commentary evidence", () => {
     const e = commentaryEvidence(a, "e4", "audience");
     expect(e.variation.map((m) => m.san)).toEqual(["e5", "Nf3"]);
     expect(e.score).toEqual({ kind: "pawns", white: 0.22 });
-    expect(e.lastAudienceMove).toBe("e4");
+    expect(e.opponentMove).toBe("e4");
+    expect(e.commentOn).toBe("opponent");
+    expect(e.yourMove).toBe("e5");
     expect(localCommentary(e)).not.toMatch(/SF|深度|参考/);
-    expect(commentaryEvidence(a, "e4", "self").kind).toBe("self");
+    expect(commentaryEvidence(a, "e4", "self").commentOn).toBe("self");
   });
 });

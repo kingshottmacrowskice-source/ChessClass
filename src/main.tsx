@@ -4,22 +4,30 @@ import App from "./App";
 import LiveMode from "./live/LiveMode";
 import "./style.css";
 import ActionPreview from "./live/ActionPreview";
+import LiveSettings from "./live/LiveSettings";
+const currentRoute = () =>
+  location.hash ||
+  ({ "/live": "#live", "/live-settings": "#live-settings" }[
+    location.pathname.replace(/\/$/, "")
+  ] ??
+    "");
 function Root() {
-  const [live, setLive] = useState(location.hash === "#live");
-  const [hash, setHash] = useState(location.hash);
+  const [live, setLive] = useState(currentRoute() === "#live");
+  const [hash, setHash] = useState(currentRoute());
   useEffect(() => {
     const update = () => {
-      setHash(location.hash);
-      setLive(location.hash === "#live");
+      setHash(currentRoute());
+      setLive(currentRoute() === "#live");
     };
     window.addEventListener("hashchange", update);
     return () => window.removeEventListener("hashchange", update);
   }, []);
   if (hash === "#actions") return <ActionPreview />;
+  if (hash === "#live-settings") return <LiveSettings />;
   return live ? (
     <LiveMode
       exit={() => {
-        location.hash = "";
+        location.hash = "#analysis";
         setLive(false);
       }}
     />

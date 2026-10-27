@@ -4,7 +4,7 @@ test("live arena accepts votes, ignores repeat users and resets safely", async (
 }) => {
   await page.goto("/#live");
   await checkFooterPanels(page);
-  await expect(page.getByRole("main", { name: "深深的棋盘" })).toBeVisible();
+  await expect(page.getByRole("main", { name: "大肥鱼的棋盘" })).toBeVisible();
   await expect(page.locator(".pixel-square")).toHaveCount(64);
   await expect(page.locator(".character-sprite")).toBeVisible();
   await page.getByLabel("测试弹幕").fill("e4");
@@ -13,11 +13,11 @@ test("live arena accepts votes, ignores repeat users and resets safely", async (
     "data-leading",
     "true",
   );
-  await expect(page.locator(".latest-feedback")).toContainText("已计票 · e2e4");
+  await expect(page.locator(".chat-feedback").last()).toContainText("已计票 · e2e4");
   await page.getByLabel("测试弹幕").fill("d4");
   await page.getByRole("button", { name: "发送", exact: true }).click();
   await expect(page.locator(".board-vote")).toHaveCount(1);
-  await expect(page.locator(".latest-feedback")).toContainText("不能重复投票");
+  await expect(page.locator(".chat-feedback").last()).toContainText("不能重复投票");
   await page.getByLabel("测试观众").fill("第二个观众");
   await page.getByLabel("测试弹幕").fill("d4");
   await page.getByRole("button", { name: "发送", exact: true }).click();
@@ -91,11 +91,56 @@ test("live engine completes an audience and enemy turn", async ({ page }) => {
   ).toHaveCount(1, {
     timeout: 18000,
   });
+  // Her piece is lifted and thrown across the board, not teleported.
+  await expect(page.locator(".fx-piece[data-fx-piece]")).toHaveCount(1, {
+    timeout: 20000,
+  });
+  await page.screenshot({ path: "test-results/live-throw.png" });
   await expect(page.locator(".live-status")).toContainText("等待观众", {
     timeout: 70000,
   });
   await expect(page.locator(".board-vote")).toHaveCount(0);
   await expect(page.locator(".chess-piece")).toHaveCount(32);
+  await expect(page.locator(".fx-piece")).toHaveCount(0);
+  await expect(page.locator(".notation-live")).toContainText(/刚才 .+：/);
+});
+
+test("built-in finisher plays without videos, rules sheet and danmaku show", async ({
+  page,
+}) => {
+  await page.route("**/api/live/videos", (route) =>
+    route.fulfill({ json: { promotion: [], checkmate: [] } }),
+  );
+  await page.goto("/#live");
+  await expect(page.locator(".rule-card")).toHaveCount(6);
+  await expect(page.locator(".live-sidebar .vote-howto")).toContainText("马跳f3");
+  await expect(page.locator(".round-summary, .vote-legend")).toHaveCount(0);
+  // Diagrams are checkered, not striped: neighbours in a column alternate.
+  const shades = await page
+    .locator(".rule-card")
+    .first()
+    .locator(".rule-grid span")
+    .evaluateAll((cells) => cells.map((c) => c.className.split(" ")[0]));
+  expect(shades.slice(0, 6)).toEqual(["l", "d", "l", "d", "l", "d"]);
+  const cell = await page
+    .locator(".rule-grid span")
+    .first()
+    .evaluate((c) => [c.clientWidth, c.clientHeight]);
+  expect(Math.abs(cell[0] - cell[1])).toBeLessThanOrEqual(1);
+  await page.getByLabel("测试弹幕").fill("大肥鱼今天也好可爱");
+  await page.getByRole("button", { name: "发送", exact: true }).click();
+  await expect(page.locator(".danmaku")).toContainText("大肥鱼今天也好可爱");
+  await expect(page.locator(".actor-emote")).toBeVisible();
+  await page.getByRole("button", { name: "预览将死大招" }).click();
+  const cut = page.getByRole("dialog", { name: "大招动画" });
+  await expect(cut).toContainText("CHECKMATE");
+  await page.waitForTimeout(1200);
+  await page.screenshot({ path: "test-results/ultimate-cut.png" });
+  await expect(cut).toHaveCount(0, { timeout: 5000 });
+  await page.getByRole("button", { name: "预览升变大招" }).click();
+  await page.getByRole("button", { name: "跳过大招" }).click();
+  await expect(cut).toHaveCount(0);
+  await page.screenshot({ path: "test-results/live-rules.png", fullPage: true });
 });
 
 test("AI batches chat and rejects a stale interpretation after reset", async ({
@@ -126,18 +171,22 @@ test("AI batches chat and rejects a stale interpretation after reset", async ({
       });
     }
   });
+  await page.goto("/#live-settings");
+  await page
+    .getByRole("checkbox", { name: "启用廉价 AI 识别与流式聊天" })
+    .check();
+  await expect(page.getByRole("status")).toContainText("已同步");
   await page.goto("/#live");
   await checkFooterPanels(page);
-  await page.getByRole("checkbox").check();
   await page.getByLabel("测试弹幕").fill("把王前面的兵走两格");
   await page.getByRole("button", { name: "发送", exact: true }).click();
   await page.waitForRequest((r) => r.url().includes("/api/model-chat"));
   await page.getByRole("button", { name: "新的一局" }).click();
   await page.waitForTimeout(1600);
   await expect(page.locator(".board-vote")).toHaveCount(0);
-  await page.getByLabel("测试弹幕").fill("你好深深");
+  await page.getByLabel("测试弹幕").fill("你好大肥鱼");
   await page.getByRole("button", { name: "发送", exact: true }).click();
-  await expect(page.locator(".sprite-bubble")).toContainText("欢迎来到棋盘", {
+  await expect(page.locator(".sprite-bubble").last()).toContainText("欢迎来到棋盘", {
     timeout: 18000,
   });
 });
@@ -158,23 +207,25 @@ test("live model controls persist and change both requests", async ({
         : { json: { choices: [{ message: { content: "[]" } }] } },
     );
   });
-  await page.goto("/#live");
-  await checkFooterPanels(page);
-  await page.getByText("模型参数", { exact: true }).click();
+  await page.goto("/#live-settings");
   await page
     .getByLabel("聊天模型", { exact: true })
     .selectOption("deepseek-v4-pro");
   await page.getByLabel("聊天温度", { exact: true }).fill("0.4");
   await page.getByLabel("聊天最大输出", { exact: true }).fill("256");
   await page.getByLabel("请求超时（秒）", { exact: true }).fill("45");
+  await expect(page.getByRole("status")).toContainText("已同步");
   await page.reload();
-  await checkFooterPanels(page);
-  await page.getByText("模型参数", { exact: true }).click();
   await expect(page.getByLabel("聊天温度", { exact: true })).toHaveValue("0.4");
-  await page.getByRole("checkbox").check();
+  await page
+    .getByRole("checkbox", { name: "启用廉价 AI 识别与流式聊天" })
+    .check();
+  await expect(page.getByRole("status")).toContainText("已同步");
+  await page.goto("/#live");
+  await checkFooterPanels(page);
   await page.getByLabel("测试弹幕").fill("你好");
   await page.getByRole("button", { name: "发送", exact: true }).click();
-  await expect(page.locator(".sprite-bubble")).toContainText("参数已应用", {
+  await expect(page.locator(".sprite-bubble").last()).toContainText("参数已应用", {
     timeout: 18000,
   });
   expect(sent.find((x) => x.stream)).toMatchObject({
@@ -285,19 +336,15 @@ test("upright pixel pieces and walking character share depth ordering", async ({
     "pixelated",
   );
   const restingPosition = await page.locator(actor).getAttribute("style");
-  await page.clock.fastForward(44000);
-  await expect(page.locator(actor)).toHaveAttribute("data-moving", "false");
+  // Waiting behaviours start within 4–9 s; Math.random = 0.99 picks a stroll.
+  await page.clock.fastForward(3500);
   expect(await page.locator(actor).getAttribute("style")).toBe(restingPosition);
-  await page.clock.fastForward(30000);
-  await expect(page.locator(actor)).toHaveAttribute("data-moving", "false");
+  await page.clock.fastForward(6000);
   await page.clock.runFor(2500);
   await expect(page.locator(actor)).toHaveAttribute("data-moving", "false");
   expect(await page.locator(actor).getAttribute("style")).not.toBe(
     restingPosition,
   );
-  const settled = await page.locator(actor).getAttribute("style");
-  await page.clock.fastForward(44000);
-  expect(await page.locator(actor).getAttribute("style")).toBe(settled);
   await expect(page.getByText(/观众执白 · SF 深度/)).toHaveCount(0);
   await expect(page.locator(".live-page")).toHaveCSS(
     "background-color",
@@ -327,7 +374,7 @@ test("audience and self commentary receive SF evidence and stream naturally", as
     const body = route.request().postDataJSON();
     if (body.stream) {
       const payload = JSON.parse(body.messages[1].content);
-      if (payload.kind) evidence.push(payload);
+      if (payload.commentOn) evidence.push(payload);
       await route.fulfill({
         contentType: "text/event-stream",
         body: 'data: {"choices":[{"delta":{"content":"你这手挺凶，那就看看谁先出手。"}}]}\n\ndata: [DONE]\n\n',
@@ -337,10 +384,14 @@ test("audience and self commentary receive SF evidence and stream naturally", as
         json: { choices: [{ message: { content: "[]" } }] },
       });
   });
+  await page.goto("/#live-settings");
+  await page.getByLabel("走棋点评频率").fill("100");
+  await page
+    .getByRole("checkbox", { name: "启用廉价 AI 识别与流式聊天" })
+    .check();
+  await expect(page.getByRole("status")).toContainText("已同步");
   await page.goto("/#live");
   await checkFooterPanels(page);
-  await page.getByLabel("走棋点评频率").fill("100");
-  await page.getByRole("checkbox").check();
   for (const move of ["e4", "Nc3"]) {
     await page.getByLabel("测试弹幕").fill(move);
     await page.getByRole("button", { name: "发送", exact: true }).click();
@@ -356,11 +407,13 @@ test("audience and self commentary receive SF evidence and stream naturally", as
     });
   }
   await expect.poll(() => evidence.length).toBe(2);
-  expect(evidence.map((e) => e.kind)).toEqual(["audience", "self"]);
+  expect(evidence.map((e) => e.commentOn)).toEqual(["opponent", "self"]);
   for (const e of evidence) {
     expect(e.depth).toBeGreaterThan(0);
     expect(e.variation.length).toBeGreaterThan(0);
-    expect(e.chosenMove).toMatch(/^[a-h][1-8][a-h][1-8]/);
+    expect(e.yourMove).toMatch(
+      /^(?:[KQRBN]?[a-h]?[1-8]?x?[a-h][1-8](?:=[QRBN])?[+#]?|O-O(?:-O)?)$/,
+    );
     expect(e.score).toBeTruthy();
   }
   await expect(page.locator(".commentary-panel")).toContainText("你这手挺凶");

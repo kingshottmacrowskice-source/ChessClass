@@ -13,6 +13,10 @@ export default defineConfig({
     openingBookPlugin(),
   ],
   server: {
+    watch: {
+      // 忽略编辑器原子保存产生的临时文件/目录，避免 EBUSY 噪声。
+      ignored: ["**/*.tmp", "**/*.tmpdir/**"],
+    },
     fs: {
       deny: [
         ".env",

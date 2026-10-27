@@ -1,0 +1,519 @@
+/* ---------- Choreography FX ---------- */
+.fx-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 30000;
+  image-rendering: pixelated;
+}
+.fx-piece {
+  position: absolute;
+  transform: translate(-50%, -95%);
+  pointer-events: none;
+}
+.fx-piece-art {
+  position: absolute;
+  inset: 0;
+  transform-origin: 50% 70%;
+}
+.fx-piece-art .pixel-chess-art {
+  filter: sepia(0.55) brightness(0.95) drop-shadow(0 2px 0 #432b1e88);
+}
+.fx-shadow {
+  position: absolute;
+  left: 17%;
+  bottom: 2%;
+  width: 72%;
+  height: 10%;
+  border-radius: 50%;
+  background: #432b1e;
+}
+.actor-emote {
+  position: absolute;
+  left: 62%;
+  top: -6%;
+  z-index: 6;
+  min-width: 1.9em;
+  padding: 2px 6px;
+  font:
+    900 clamp(12px, 1.3vw, 17px) / 1.2 "Courier New",
+    monospace;
+  text-align: center;
+  color: #1b2c4a;
+  background: #fffbe8;
+  border: 2px solid #1b2c4a;
+  box-shadow:
+    2px 2px 0 #1b2c4a,
+    inset -2px -2px 0 #e8d5c0;
+  animation: emote-pop 260ms steps(4) both;
+  white-space: nowrap;
+}
+.actor-emote::after {
+  content: "";
+  position: absolute;
+  left: 6px;
+  bottom: -7px;
+  width: 6px;
+  height: 6px;
+  background: inherit;
+  border: 2px solid #1b2c4a;
+  border-top: 0;
+  border-left: 0;
+  transform: rotate(45deg);
+}
+.actor-emote.alert {
+  color: #a13e32;
+}
+.actor-emote.angry {
+  color: #fff;
+  background: #c8473a;
+}
+.actor-emote.happy {
+  color: #2e4a3f;
+}
+.actor-emote.sleep {
+  color: #536c8c;
+  animation:
+    emote-pop 260ms steps(4) both,
+    emote-bob 1.6s steps(4) infinite;
+}
+@keyframes emote-pop {
+  from {
+    transform: translateY(8px) scale(0.3);
+    opacity: 0;
+  }
+}
+@keyframes emote-bob {
+  50% {
+    transform: translateY(-4px);
+  }
+}
+.deepseek-actor.wave .character-sprite,
+.deepseek-actor.carry .character-sprite {
+  animation: actor-bounce 0.42s steps(3) infinite;
+}
+@keyframes actor-bounce {
+  50% {
+    translate: 0 -3%;
+  }
+}
+.vote-countdown {
+  position: absolute;
+  left: 50%;
+  top: 42%;
+  z-index: 31000;
+  transform: translate(-50%, -50%);
+  font:
+    900 clamp(56px, 10vw, 120px) / 1 "Courier New",
+    monospace;
+  color: #ffdf5d;
+  text-shadow:
+    4px 0 #7a1d12,
+    -4px 0 #7a1d12,
+    0 4px #7a1d12,
+    0 -4px #7a1d12,
+    6px 6px 0 #432b1e;
+  pointer-events: none;
+  animation: countdown-slam 1s steps(6) both;
+}
+@keyframes countdown-slam {
+  0% {
+    transform: translate(-50%, -50%) scale(2.2);
+    opacity: 0;
+  }
+  20% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+  80% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(0.9);
+    opacity: 0;
+  }
+}
+.danmaku-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 32000;
+}
+.danmaku {
+  position: absolute;
+  left: 100%;
+  white-space: nowrap;
+  padding: 1px 8px;
+  font:
+    bold 14px/1.5 "Microsoft YaHei",
+    sans-serif;
+  color: #fff;
+  background: #1b2c4a99;
+  border: 2px solid #1b2c4acc;
+  text-shadow: 1px 1px 0 #000;
+  animation: danmaku-fly 9s linear forwards;
+}
+.danmaku b {
+  color: #9fd0ff;
+}
+.danmaku.vote {
+  background: #a13e32cc;
+  border-color: #ffdf5d;
+}
+.danmaku.vote b {
+  color: #ffdf5d;
+}
+@keyframes danmaku-fly {
+  to {
+    transform: translateX(calc(-100vw - 100%));
+  }
+}
+.persona-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: -4px 0 12px;
+}
+.live-page .persona-presets button {
+  padding: 5px 10px;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+.live-sidebar .commentary-panel {
+  padding: 18px;
+}
+.live-sidebar .commentary-panel p {
+  font-size: 14px;
+  margin: 0;
+}
+
+/* ---------- Ultimate cut-in ---------- */
+.ultimate-cut {
+  position: fixed;
+  inset: 0;
+  z-index: 20000;
+  overflow: hidden;
+  background: #0d0a1aee;
+  cursor: pointer;
+  animation: cut-fade 3.4s steps(20) both;
+  --hot: #ffd84a;
+  --deep: #7a1d12;
+}
+.ultimate-cut.checkmate {
+  --hot: #ff5b4a;
+  --deep: #2b0606;
+}
+.ultimate-cut.theirs {
+  --hot: #8fd1ff;
+  --deep: #0b2340;
+}
+.cut-lines {
+  position: absolute;
+  inset: -50%;
+  background: repeating-linear-gradient(
+    -12deg,
+    transparent 0 22px,
+    color-mix(in srgb, var(--hot) 35%, transparent) 22px 26px,
+    transparent 26px 60px
+  );
+  animation: cut-speed 0.35s linear infinite;
+}
+@keyframes cut-speed {
+  to {
+    transform: translateX(-120px);
+  }
+}
+.cut-band {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: min(46vh, 380px);
+  transform: translateY(-50%) skewY(-6deg);
+  background: linear-gradient(90deg, var(--deep), #000a 60%, var(--deep));
+  border-top: 8px solid var(--hot);
+  border-bottom: 8px solid var(--hot);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4vw;
+  animation: cut-band-in 0.32s steps(5) both;
+}
+@keyframes cut-band-in {
+  from {
+    transform: translateY(-50%) skewY(-6deg) scaleY(0);
+  }
+}
+.cut-portrait {
+  height: 145%;
+  margin-top: -6%;
+  image-rendering: pixelated;
+  transform: skewY(6deg);
+  filter: drop-shadow(8px 0 0 var(--hot)) drop-shadow(-4px 0 0 #000);
+  animation: cut-portrait-in 0.5s steps(6) 0.15s both;
+}
+.ultimate-cut.theirs .cut-portrait {
+  filter: grayscale(0.4) drop-shadow(8px 0 0 var(--hot));
+  animation:
+    cut-portrait-in 0.5s steps(6) 0.15s both,
+    cut-tremble 0.12s steps(2) 0.7s infinite;
+}
+@keyframes cut-portrait-in {
+  from {
+    transform: skewY(6deg) translateX(-70vw);
+  }
+}
+@keyframes cut-tremble {
+  50% {
+    translate: 4px 0;
+  }
+}
+.cut-text {
+  display: flex;
+  flex-direction: column;
+  transform: skewY(6deg);
+  color: #fff;
+  font-family: "Courier New", "Microsoft YaHei", monospace;
+}
+.cut-sub {
+  font-size: clamp(16px, 2.4vw, 30px);
+  font-weight: 900;
+  letter-spacing: 0.5em;
+  color: var(--hot);
+  animation: cut-slide 0.4s steps(5) 0.25s both;
+}
+.cut-big {
+  display: flex;
+  font-size: clamp(64px, 12vw, 170px);
+  line-height: 1.1;
+  font-weight: 900;
+}
+.cut-big i {
+  font-style: normal;
+  color: #fff;
+  text-shadow:
+    6px 0 var(--deep),
+    -6px 0 var(--deep),
+    0 6px var(--deep),
+    0 -6px var(--deep),
+    10px 10px 0 var(--hot);
+  animation: cut-letter 0.3s steps(4) both;
+}
+@keyframes cut-letter {
+  from {
+    transform: scale(3) rotate(-12deg);
+    opacity: 0;
+  }
+}
+.cut-caption {
+  font-size: clamp(14px, 1.6vw, 20px);
+  letter-spacing: 0.3em;
+  color: #fffbe8;
+  animation: cut-slide 0.4s steps(5) 0.8s both;
+}
+@keyframes cut-slide {
+  from {
+    transform: translateX(60px);
+    opacity: 0;
+  }
+}
+.cut-flash {
+  position: absolute;
+  inset: 0;
+  background: #fff;
+  pointer-events: none;
+  animation: cut-flash 0.45s steps(4) 0.3s both;
+}
+@keyframes cut-flash {
+  from {
+    opacity: 0.95;
+  }
+  to {
+    opacity: 0;
+  }
+}
+@keyframes cut-fade {
+  0% {
+    opacity: 0;
+  }
+  4%,
+  90% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.ultimate-cut button {
+  position: absolute;
+  right: 30px;
+  top: 30px;
+  z-index: 2;
+}
+
+/* ---------- Rules & voting sidebar ---------- */
+.live-sidebar {
+  position: sticky;
+  top: 16px;
+  align-self: start;
+}
+.live-page .live-sidebar > .rules-board {
+  margin: 0;
+  padding: 16px;
+  background: #2b2a3a;
+  color: #f5e6d3;
+  border: 4px solid #1b1a26;
+  box-shadow:
+    0 0 0 4px #8b4513,
+    6px 6px 0 4px #43281855;
+  font-family: "Courier New", "Microsoft YaHei", monospace;
+}
+.live-page .live-sidebar > .rules-board::before,
+.live-page .live-sidebar > .rules-board::after {
+  content: none;
+}
+.live-page .rules-board h2 {
+  margin: 0 0 10px;
+  font-size: 16px;
+  color: #ffdf5d;
+  letter-spacing: 0.12em;
+}
+.rules-pieces,
+.vote-howto {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.rule-card {
+  display: grid;
+  grid-template-columns: 80px 1fr;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 2px dashed #3f3e58;
+}
+.rule-card:last-child {
+  border-bottom: 0;
+}
+.rule-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  grid-template-rows: repeat(5, 1fr);
+  width: 80px;
+  height: 80px;
+  border: 2px solid #1b1a26;
+  box-shadow: 2px 2px 0 #1b1a26;
+}
+.rule-grid span {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  min-height: 0;
+}
+.rule-grid .l {
+  background: #dbc7a6;
+}
+.rule-grid .d {
+  background: #8a9a84;
+}
+.rule-grid .me {
+  background: #ffdf5d;
+}
+.rule-grid svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.rule-grid .mv::after,
+.rule-legend .mv {
+  content: "";
+  display: block;
+  width: 6px;
+  height: 6px;
+  background: #1f6b3f;
+  box-shadow: 0 0 0 1px #e9ffd9;
+}
+.rule-grid .cap::after,
+.rule-legend .cap {
+  content: "";
+  display: block;
+  width: 6px;
+  height: 6px;
+  background: #c8473a;
+  box-shadow: 0 0 0 1px #ffdf5d;
+  transform: rotate(45deg);
+}
+.rule-text b {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 15px;
+  color: #ffdf5d;
+}
+.rule-text p {
+  margin: 2px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #e8d5c0;
+}
+.rule-legend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 16px;
+  font-size: 12px;
+  color: #c9b9a3;
+}
+.rule-legend i {
+  display: inline-block;
+  margin-left: 6px;
+}
+.vote-howto li {
+  position: relative;
+  padding-left: 14px;
+  margin-bottom: 6px;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.vote-howto li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.65em;
+  width: 6px;
+  height: 6px;
+  background: #ffdf5d;
+}
+.rules-board code {
+  color: #ffdf5d;
+  background: #1b1a26;
+  padding: 0 4px;
+  font-size: 12px;
+}
+.notation-live {
+  margin: 12px 0 0;
+  padding: 6px 10px;
+  background: #1b1a26;
+  border-left: 4px solid #ffdf5d;
+  font-size: 12px;
+  line-height: 1.7;
+}
+@media (max-width: 1000px) {
+  .live-sidebar {
+    position: static;
+  }
+  .rules-pieces {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 0 16px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .danmaku-layer,
+  .vote-countdown {
+    display: none;
+  }
+}

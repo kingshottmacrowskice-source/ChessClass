@@ -16,7 +16,7 @@ export default function ActionPreview() {
     [travel, setTravel] = useState(false),
     [grid, setGrid] = useState(true),
     [text, setText] = useState("这枚棋子，我就不客气啦。");
-  const { bubble, say } = useSpeechBubble("");
+  const { bubbles, say } = useSpeechBubble("");
   const walker = useWalker();
   useEffect(() => {
     if (!playing) return;
@@ -57,7 +57,7 @@ export default function ActionPreview() {
       <header className="live-header">
         <div>
           <span className="live-eyebrow">DEEPSEEK / ANIMATION STUDIO</span>
-          <h1>深深 · 动作放映室</h1>
+          <h1>大肥鱼 · 动作放映室</h1>
           <p>9 组独立素材 · 每组 6 帧 · 与直播棋盘共用播放器</p>
         </div>
         <a className="action-preview-link" href="#live">
@@ -82,7 +82,11 @@ export default function ActionPreview() {
                 frame={frame}
                 facing={travel ? walker.facing : facing}
               />
-              {bubble && <div className="sprite-bubble">{bubble}</div>}
+              {bubbles.length > 0 && (
+                <div className="sprite-bubble">
+                  {bubbles[bubbles.length - 1].text}
+                </div>
+              )}
               <span className="foot-anchor" />
             </div>
             <span className="stage-label">

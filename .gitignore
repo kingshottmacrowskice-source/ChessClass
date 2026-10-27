@@ -8,5 +8,7 @@ playwright-report/
 .env*
 data/
 server/models.local.json
+server/bilibili.local.json
+server/bilibili.local.json.tmp*
 public/source/stockfish-v17.1.0.tar.gz
 public/source/nn-*.nnue

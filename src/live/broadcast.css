@@ -1,0 +1,74 @@
+/* Text-only scaling: board projection and piece geometry stay unchanged. */
+.live-broadcast {
+  --broadcast-bubble-width: min(72vw, calc(235px * var(--live-text-scale)));
+  font-size: calc(16px * var(--live-text-scale));
+}
+.live-broadcast
+  :is(
+    .live-status,
+    .board-footer,
+    .rule-text p,
+    .rule-legend,
+    .rules-board code,
+    .notation-live,
+    small
+  ) {
+  font-size: calc(12px * var(--live-text-scale));
+}
+.live-broadcast
+  :is(
+    .vote-howto li,
+    .connection,
+    .chat-feedback,
+    button,
+    .action-preview-link
+  ) {
+  font-size: calc(13px * var(--live-text-scale));
+}
+.live-broadcast
+  :is(.danmaku, .live-footer, .chat-log, input, textarea, select, label) {
+  font-size: calc(14px * var(--live-text-scale));
+}
+.live-broadcast .rule-text b {
+  font-size: calc(15px * var(--live-text-scale));
+}
+.live-page.live-broadcast .rules-board h2 {
+  font-size: calc(16px * var(--live-text-scale));
+}
+.live-page.live-broadcast .live-footer h2 {
+  font-size: calc(20px * var(--live-text-scale));
+}
+.live-broadcast .pixel-square small {
+  font-size: calc(clamp(7px, 0.75vw, 10px) * var(--live-text-scale));
+}
+.live-broadcast .sprite-bubble {
+  font-size: calc(13px * var(--live-text-scale));
+  line-height: 1.6;
+  width: var(--broadcast-bubble-width);
+  max-height: none;
+  overflow-wrap: anywhere;
+}
+.live-broadcast .sprite-bubbles {
+  transform: translateX(-50%)
+    translateX(
+      clamp(
+        calc(var(--broadcast-bubble-width) / 2 - var(--actor-screen-x) + 12px),
+        0px,
+        calc(
+          var(--stage-width) - var(--actor-screen-x) -
+            var(--broadcast-bubble-width) / 2 - 12px
+        )
+      )
+    );
+}
+.live-broadcast :is(.live-status, .board-footer, .rule-legend, .live-actions) {
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+.live-broadcast .rule-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.live-broadcast .rule-grid {
+  flex-shrink: 0;
+}

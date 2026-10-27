@@ -8,6 +8,7 @@ import {
   type OpeningArticle,
   type OpeningTranslation,
 } from "./opening-book";
+import { DEFLAVOR } from "../deflavor";
 export type Settings = {
   base: string;
   key: string;
@@ -218,7 +219,8 @@ summary 是 {text,evidenceRefs}，intent/advantages/drawbacks/risks/responses/co
 AnalyzeMove 说明实际走法可能意图、具体优缺点和最佳替代的差异；RecommendMove 解释最佳及其余每个候选的得失、计划和对手应对。
 不要新增 JSON 棋步/变化字段；文字里的棋步只能来自所引用 evidence 的 SAN。每个重要结论引用对应 evidence。
 吃子、攻击、保护、中心控制只使用 facts。被攻击不等于丢子，合法变化不等于强制变化。赢子必须指出实际交换序列及净子力依据，将杀只在引擎 mate 或事实 checkmate 支持时说明。无依据不得断言。
-意图必须写成“可能”。必须解释具体原因，证据不足明确说无法判断；不得把评分直接改写成理由。confidenceReason 说明深度、依据局限。不要声称自然语言结论已经验证。`;
+意图必须写成“可能”。必须解释具体原因，证据不足明确说无法判断；不得把评分直接改写成理由。confidenceReason 说明深度、依据局限。不要声称自然语言结论已经验证。
+${DEFLAVOR}`;
 export class Llm {
   cache = new Lru<Explanation>(60);
   store = new ServerStore<Explanation>("explanation");
@@ -327,7 +329,7 @@ export class Llm {
           : endpoint(settings.base),
         settings.model,
         settings.language,
-        "prompt-1",
+        "prompt-2",
         ENGINE,
       ],
       (_name, value) =>

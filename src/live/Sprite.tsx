@@ -104,7 +104,7 @@ export default function Sprite({
       height={CANVAS_HEIGHT}
       className="character-sprite"
       role="img"
-      aria-label={error ? "动作素材加载失败" : `深深：${action.name}`}
+      aria-label={error ? "动作素材加载失败" : `大肥鱼：${action.name}`}
       data-frame={frame}
       data-row={row}
       data-loaded={!!img}
