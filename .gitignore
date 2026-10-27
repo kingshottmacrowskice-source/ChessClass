@@ -1,0 +1,12 @@
+node_modules/
+dist/
+public/engine/
+public/licenses/
+test-results/
+playwright-report/
+*.tsbuildinfo
+.env*
+data/
+server/models.local.json
+public/source/stockfish-v17.1.0.tar.gz
+public/source/nn-*.nnue
