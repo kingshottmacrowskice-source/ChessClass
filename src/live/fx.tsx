@@ -389,15 +389,22 @@ const FxLayer = forwardRef<
     shake(power) {
       const el = shakeTarget.current;
       if (!el || reduced() || !el.animate) return;
-      const amp = 3 + power * 7;
-      const frames = Array.from({ length: 9 }, (_, i) => {
-        const k = 1 - i / 8;
+      // A decaying rumble: alternating side-to-side jolts with a little roll,
+      // so a heavy hit reads as the board itself shuddering.
+      const amp = 3 + power * 10;
+      const tilt = Math.min(1.4, power * 0.55);
+      const frames = Array.from({ length: 11 }, (_, i) => {
+        const k = (1 - i / 10) ** 1.5;
+        const dir = i % 2 ? -1 : 1;
         return {
-          transform: `translate(${((Math.random() - 0.5) * 2 * amp * k).toFixed(1)}px, ${((Math.random() - 0.5) * 2 * amp * k).toFixed(1)}px)`,
+          transform:
+            `translate(${(dir * amp * k * (0.6 + Math.random() * 0.4)).toFixed(1)}px, ` +
+            `${((Math.random() - 0.5) * amp * k).toFixed(1)}px) ` +
+            `rotate(${(dir * tilt * k).toFixed(2)}deg)`,
         };
       });
-      frames[8] = { transform: "translate(0px, 0px)" };
-      el.animate(frames, { duration: 260 + power * 160, easing: "linear" });
+      frames[10] = { transform: "translate(0px, 0px) rotate(0deg)" };
+      el.animate(frames, { duration: 260 + power * 200, easing: "linear" });
     },
     clear() {
       effects.current = [];

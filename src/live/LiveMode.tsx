@@ -18,6 +18,11 @@ import BoardVotes from "./BoardVotes";
 import Actor, { type Emote } from "./Actor";
 import FxLayer, { pieceColors, type FxApi } from "./fx";
 import Ultimate, { type UltimateKind, type UltimateShow } from "./Ultimate";
+import { CameraRig, mountCamera } from "./camera";
+import { cinemaRoll, type Beat, type CinemaShow } from "./cinema";
+import { CinemaFrame, CinemaPieces } from "./CinemaFrame";
+import { CinemaShot } from "./cinemaShot";
+import "./cinema.css";
 import RulesPanel from "./RulesPanel";
 import { useBoardProjection } from "./projection";
 import { useSpeechBubble } from "./speech";
@@ -241,6 +246,43 @@ export default function LiveMode({ exit }: { exit: () => void }) {
     ultimateId = useRef(0);
   const ultimateRef = useRef(ultimate);
   ultimateRef.current = ultimate;
+  const projectRef = useRef(project);
+  projectRef.current = project;
+  const [beat, setBeat] = useState<Beat>({
+    phase: "lead",
+    swapped: false,
+    slain: false,
+  });
+  const camera = useRef(new CameraRig());
+  const shot = useRef<CinemaShot | null>(null);
+  if (!shot.current)
+    shot.current = new CinemaShot({
+      fx: () => fx.current,
+      camera: camera.current,
+      stage: () => projectionRef.current,
+      project: (x, y) => projectRef.current(x, y),
+      set: (b) => setBeat((old) => ({ ...old, ...b })),
+      reduced: reducedMotion,
+    });
+  useEffect(() => {
+    mountCamera(camera.current);
+    return () => {
+      shot.current?.cancel();
+      mountCamera(null);
+    };
+  }, []);
+  const cut = ultimate?.cinema;
+  useEffect(() => {
+    if (!cut) return;
+    let live = true;
+    void shot.current!.run(cut).then((done) => {
+      if (done && live) nextUltimate();
+    });
+    return () => {
+      live = false;
+      shot.current?.cancel();
+    };
+  }, [cut]);
   const alive = useRef(true),
     busy = useRef(false),
     epoch = useRef(0),
@@ -642,21 +684,57 @@ export default function LiveMode({ exit }: { exit: () => void }) {
     }
     return ok;
   };
-  const special = (kind: UltimateKind, by: "w" | "b", detail?: string) => {
+  /**
+   * Queue a finisher. Given the pieces involved (`cast`), it is shot on the
+   * board with the camera half the time; otherwise it plays the video/cut-in.
+   */
+  const special = (
+    kind: UltimateKind,
+    by: "w" | "b",
+    detail?: string,
+    cast?: Omit<CinemaShow, "kind" | "by" | "detail">,
+    forceCinema?: boolean,
+  ) => {
     const list = videos.current[kind] || [];
+    const cinema =
+      cast && (forceCinema ?? cinemaRoll())
+        ? { ...cast, kind, by, detail }
+        : undefined;
     const show: UltimateShow = {
       id: ++ultimateId.current,
       kind,
       by,
       detail,
-      video: list.length
-        ? list[Math.floor(Math.random() * list.length)]
-        : undefined,
+      cinema,
+      video:
+        !cinema && list.length
+          ? list[Math.floor(Math.random() * list.length)]
+          : undefined,
     };
     if (ultimateRef.current) ultimateQueue.current.push(show);
     else setUltimate(show);
   };
   const nextUltimate = () => setUltimate(ultimateQueue.current.shift() ?? null);
+  /** Operator preview of the board-camera finishers, cast from the live position. */
+  const previewCinema = (kind: UltimateKind) => {
+    const pieces = game.current
+      .board()
+      .flat()
+      .filter((p) => p !== null);
+    const mine = pieces.filter((p) => p.color === "b" && p.type !== "k");
+    const hero =
+      kind === "promotion"
+        ? (mine.find((p) => p.type === "p") ?? mine[0])
+        : (mine.find((p) => p.type === "q") ?? mine[0]);
+    if (!hero) return;
+    if (kind === "promotion")
+      special(kind, "b", undefined, { hero: hero.type, square: hero.square, promo: "q" }, true);
+    else {
+      const king = pieces.find((p) => p.color === "w" && p.type === "k");
+      if (king)
+        special(kind, "b", undefined, { hero: hero.type, square: hero.square, victim: king.square }, true);
+    }
+  };
   /** Board consequences of any committed move: reactions, effects and finishers. */
   const afterMove = (m: ReturnType<Chess["move"]>) => {
     setMoveProgress(0);
@@ -701,7 +779,14 @@ export default function LiveMode({ exit }: { exit: () => void }) {
         act("carry");
         showEmote("QAQ", "angry", 3000);
       } else showEmote("♛", "happy", 3000);
-      special("checkmate", m.color, m.promotion ? "升变 · 将死" : undefined);
+      special(
+        "checkmate",
+        m.color,
+        m.promotion ? "升变 · 将死" : undefined,
+        kingSquare
+          ? { hero: m.promotion ?? m.piece, square: m.to, victim: kingSquare }
+          : undefined,
+      );
       // 被将死后 30 秒自动重开。
       const token = epoch.current;
       setTimeout(() => {
@@ -743,7 +828,11 @@ export default function LiveMode({ exit }: { exit: () => void }) {
     if (m.promotion && !g.isCheckmate()) {
       f?.burst({ ...point(m.to), h: 0.6 }, "spark", { count: 24 });
       f?.text({ ...point(m.to), h: 1.4 }, "升变!", "hit");
-      special("promotion", m.color);
+      special("promotion", m.color, undefined, {
+        hero: "p",
+        square: m.to,
+        promo: m.promotion,
+      });
     }
   };
   /** Knock out a captured piece: kicked away, shot to bits, or rammed off the board. */
@@ -771,7 +860,7 @@ export default function LiveMode({ exit }: { exit: () => void }) {
       f.burst({ ...at, h: 0.45 }, "spark");
       f.flash("#fff6d0", 160);
       f.text({ ...at, h: 1.3 }, "BANG!", "hit");
-      f.shake(1);
+      f.shake(1.7);
       return;
     }
     void f.fly({
@@ -782,7 +871,18 @@ export default function LiveMode({ exit }: { exit: () => void }) {
     f.burst({ ...at, h: 0.4 }, "stars");
     f.ring(at);
     f.text({ ...at, h: 1.3 }, kind === "kick" ? "BAM!" : "CRASH!", "hit");
-    f.shake(kind === "kick" ? 1.1 : 0.9);
+    f.shake(kind === "kick" ? 1.9 : 1.5);
+  };
+  /** Operator preview: wreck a piece on the board so the strike effects play on demand. */
+  const previewStrike = () => {
+    if (busy.current) return;
+    const victim = game.current
+      .board()
+      .flat()
+      .find((p) => p && p.color === "w" && p.type !== "k");
+    if (!victim) return;
+    strike(pickStyle().attack, victim.square, victim.type, walker.where());
+    setTimeout(() => setHidden([]), 1600);
   };
   const runEnemy = async () => {
     if (game.current.turn() !== "b" || game.current.isGameOver()) return;
@@ -864,6 +964,8 @@ export default function LiveMode({ exit }: { exit: () => void }) {
       const opponentMove = game.current.history().at(-1) || "";
       if (shouldComment && commentKind === "audience")
         narrate(a, "audience", opponentMove);
+      // A board-camera finisher is still filming; don't move pieces under it.
+      while (ultimateRef.current?.cinema) await pause(120);
       // Look first: lock on to the destination (red if something gets eaten).
       act("idle");
       walker.face(to);
@@ -955,6 +1057,7 @@ export default function LiveMode({ exit }: { exit: () => void }) {
       setNow(Date.now());
       if (
         busy.current ||
+        ultimateRef.current?.cinema ||
         game.current.turn() !== "w" ||
         game.current.isGameOver()
       )
@@ -993,7 +1096,7 @@ export default function LiveMode({ exit }: { exit: () => void }) {
             path: knockPath(point(sq), point(m.from), 0.8),
           });
           f?.burst({ ...point(sq), h: 0.4 }, "stars", { count: 6 });
-          f?.shake(0.7);
+          f?.shake(1.1);
         }
       }, MOVE_MS * 0.8);
       setTimeout(() => {
@@ -1160,6 +1263,19 @@ export default function LiveMode({ exit }: { exit: () => void }) {
       )
     : 0;
   const at = project(actor.x, actor.y);
+  // Squares whose real pieces are swapped for the close-up cast mid-shot.
+  const filming = cut && beat.phase !== "lead";
+  const cast = filming ? [cut.square, cut.victim] : [];
+  const castBox = (square: string) => {
+    const floor = point(square),
+      s = project(floor.x, floor.y);
+    return {
+      left: s.x,
+      top: s.y,
+      width: s.width * 0.76,
+      height: s.width * 0.96,
+    };
+  };
   void version;
   return (
     <main
@@ -1174,6 +1290,7 @@ export default function LiveMode({ exit }: { exit: () => void }) {
         } as CSSProperties
       }
       aria-label="大肥鱼的棋盘"
+      data-cinema-phase={cut ? beat.phase : undefined}
     >
       <div className="live-layout">
         <section className="live-stage">
@@ -1222,7 +1339,8 @@ export default function LiveMode({ exit }: { exit: () => void }) {
               {squares.map((p, i) => {
                 const square =
                   String.fromCharCode(97 + (i % 8)) + (8 - Math.floor(i / 8));
-                if (!p || hidden.includes(square)) return null;
+                if (!p || hidden.includes(square) || cast.includes(square))
+                  return null;
                 const floor = point(square),
                   at = project(floor.x, floor.y);
                 const origin = movingFrom(visualMove, square);
@@ -1293,6 +1411,14 @@ export default function LiveMode({ exit }: { exit: () => void }) {
                     </div>
                   );
                 })()}
+              {filming && projectionReady && (
+                <CinemaPieces
+                  show={cut}
+                  beat={beat}
+                  hero={castBox(cut.square)}
+                  victim={cut.victim ? castBox(cut.victim) : undefined}
+                />
+              )}
               <Actor
                 at={at}
                 pose={shownPose}
@@ -1413,12 +1539,21 @@ export default function LiveMode({ exit }: { exit: () => void }) {
             <p className="connection">
               {connected ? connection : "尚未连接"} · 高流量可能漏弹幕
             </p>
-            <div className="persona-presets" role="group" aria-label="大招预览">
+            <div className="persona-presets" role="group" aria-label="特效预览">
               <button type="button" onClick={() => special("promotion", "b")}>
                 预览升变大招
               </button>
               <button type="button" onClick={() => special("checkmate", "b")}>
                 预览将死大招
+              </button>
+              <button type="button" onClick={() => previewCinema("promotion")}>
+                预览升变运镜
+              </button>
+              <button type="button" onClick={() => previewCinema("checkmate")}>
+                预览将死运镜
+              </button>
+              <button type="button" onClick={previewStrike}>
+                预览吃子震动
               </button>
             </div>
             {game.current.turn() === "b" && !busy.current && (
@@ -1480,8 +1615,17 @@ export default function LiveMode({ exit }: { exit: () => void }) {
           )}
         </div>
       </footer>
-      {ultimate && (
-        <Ultimate key={ultimate.id} show={ultimate} onDone={nextUltimate} />
+      {ultimate?.cinema ? (
+        <CinemaFrame
+          key={ultimate.id}
+          show={ultimate.cinema}
+          beat={beat}
+          onSkip={nextUltimate}
+        />
+      ) : (
+        ultimate && (
+          <Ultimate key={ultimate.id} show={ultimate} onDone={nextUltimate} />
+        )
       )}
     </main>
   );

@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState } from "react";
+import { withoutCamera } from "./camera";
 
 type Row = { left: number; right: number; y: number; width: number };
 // Measure the projected floor, then place upright billboards in a separate layer.
@@ -8,7 +9,8 @@ export function useBoardProjection() {
   useLayoutEffect(() => {
     const container = ref.current;
     if (!container) return;
-    const measure = () => {
+    // A camera shot scales the stage; measure the board as authored, not as filmed.
+    const measure = () => withoutCamera(() => {
       const origin = container.getBoundingClientRect();
       const cells = [...container.querySelectorAll(".pixel-square")];
       if (cells.length !== 64) return;
@@ -24,7 +26,7 @@ export function useBoardProjection() {
           };
         }),
       );
-    };
+    });
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(container);

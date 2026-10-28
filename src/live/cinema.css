@@ -1,0 +1,321 @@
+/* ---------- Board-camera finishers ---------- */
+/* The stage is filmed above the page furniture but under the frame. */
+.board-perspective.camera-on {
+  z-index: 19000;
+  will-change: translate, rotate, scale;
+}
+.live-page[data-cinema-phase="strobe"] .board-perspective {
+  filter: grayscale(1) contrast(2.2) brightness(1.1);
+}
+.live-page[data-cinema-phase="kill"] .board-perspective {
+  filter: grayscale(1) contrast(1.6);
+}
+
+.cinema {
+  position: fixed;
+  inset: 0;
+  z-index: 20000;
+  overflow: hidden;
+  cursor: pointer;
+  --hot: #ffd84a;
+  --deep: #7a1d12;
+}
+.cinema.cinema-checkmate {
+  --hot: #ff4a3a;
+  --deep: #2b0606;
+}
+.cinema.cinema-promotion.theirs {
+  --hot: #8fd1ff;
+  --deep: #0b2340;
+}
+.cinema > * {
+  position: absolute;
+  pointer-events: none;
+}
+.cinema-vignette {
+  inset: 0;
+  background: radial-gradient(
+    ellipse 48% 52% at 50% 52%,
+    transparent 48%,
+    #0009 72%,
+    #000e 100%
+  );
+  opacity: 0;
+  transition: opacity 0.4s;
+}
+.cinema:not([data-phase="lead"]):not([data-phase="out"]) .cinema-vignette {
+  opacity: 1;
+}
+.cinema-rays {
+  inset: -50%;
+  background: repeating-conic-gradient(
+    from 0deg at 50% 50%,
+    color-mix(in srgb, var(--hot) 45%, transparent) 0 5deg,
+    transparent 5deg 16deg
+  );
+  -webkit-mask-image: radial-gradient(circle at 50% 51%, transparent 9%, #000 32%);
+  mask-image: radial-gradient(circle at 50% 51%, transparent 9%, #000 32%);
+  mix-blend-mode: screen;
+  opacity: 0;
+  transition: opacity 0.35s;
+  animation: cinema-spin 7s linear infinite;
+}
+.cinema.cinema-promotion:is([data-phase="ascend"], [data-phase="reveal"]) .cinema-rays,
+.cinema.cinema-checkmate[data-phase="confront"] .cinema-rays {
+  opacity: 0.6;
+}
+@keyframes cinema-spin {
+  to {
+    rotate: 360deg;
+  }
+}
+/* Black/white strobe: the whole screen inverts on alternate beats. */
+.cinema-strobe {
+  inset: 0;
+  background: #fff;
+  mix-blend-mode: difference;
+  opacity: 0;
+}
+.cinema[data-phase="strobe"] .cinema-strobe {
+  animation: cinema-invert 0.22s steps(1) infinite;
+}
+@keyframes cinema-invert {
+  50% {
+    opacity: 1;
+  }
+}
+.cinema-bars::before,
+.cinema-bars::after {
+  content: "";
+  position: fixed;
+  left: 0;
+  right: 0;
+  height: 0;
+  background: #000;
+  transition: height 0.35s steps(5);
+}
+.cinema-bars::before {
+  top: 0;
+}
+.cinema-bars::after {
+  bottom: 0;
+}
+.cinema:not([data-phase="lead"]):not([data-phase="out"]) .cinema-bars::before,
+.cinema:not([data-phase="lead"]):not([data-phase="out"]) .cinema-bars::after {
+  height: 11vh;
+}
+.cinema-slash {
+  left: -20%;
+  right: -20%;
+  top: 52%;
+  height: 12px;
+  background: #fff;
+  box-shadow:
+    0 0 18px 6px var(--hot),
+    0 0 60px 20px #fff8;
+  transform-origin: 0 50%;
+  animation: cinema-slash 0.42s cubic-bezier(0.2, 0.9, 0.2, 1) forwards;
+}
+@keyframes cinema-slash {
+  0% {
+    transform: rotate(-24deg) scaleX(0);
+  }
+  45% {
+    transform: rotate(-24deg) scaleX(1);
+    opacity: 1;
+  }
+  100% {
+    transform: rotate(-24deg) scaleX(1) scaleY(0.1);
+    opacity: 0;
+  }
+}
+.cinema-bloom {
+  inset: 0;
+  background: radial-gradient(circle at 50% 52%, #fff, #fff0 62%);
+  animation: cinema-bloom 0.6s ease-out forwards;
+}
+@keyframes cinema-bloom {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+.cinema-tag {
+  left: 6vw;
+  bottom: calc(11vh + 18px);
+  display: flex;
+  flex-direction: column;
+  color: #fff;
+  font-family: "Courier New", "Microsoft YaHei", monospace;
+  line-height: 1.1;
+  opacity: 0;
+  transform: translateX(-40px);
+  transition:
+    opacity 0.25s,
+    transform 0.3s steps(4);
+}
+.cinema.cinema-promotion[data-phase="reveal"] .cinema-tag,
+.cinema.cinema-checkmate[data-phase="kill"] .cinema-tag {
+  opacity: 1;
+  transform: none;
+}
+.cinema-tag span {
+  font-size: clamp(14px, 2vw, 24px);
+  font-weight: 900;
+  letter-spacing: 0.5em;
+  color: var(--hot);
+}
+.cinema-tag strong {
+  font-size: clamp(48px, 9vw, 120px);
+  font-weight: 900;
+  text-shadow:
+    5px 0 var(--deep),
+    -5px 0 var(--deep),
+    0 5px var(--deep),
+    0 -5px var(--deep),
+    9px 9px 0 var(--hot);
+}
+.cinema-tag em {
+  font-style: normal;
+  font-size: clamp(13px, 1.5vw, 18px);
+  letter-spacing: 0.3em;
+}
+.cinema > button {
+  right: 30px;
+  top: calc(11vh + 16px);
+  pointer-events: auto;
+}
+
+/* ---------- The close-up cast, riding the camera ---------- */
+.cinema-pieces {
+  position: absolute;
+  inset: 0;
+  z-index: 29000;
+  pointer-events: none;
+  --glow: #ffd84a;
+}
+.cinema-pieces.cinema-checkmate {
+  --glow: #ff5b4a;
+}
+.cinema-hero {
+  position: absolute;
+  transform: translate(-50%, -95%);
+}
+.hero-lift,
+.hero-art {
+  position: absolute;
+  inset: 0;
+}
+.hero-lift {
+  transition:
+    translate 0.5s cubic-bezier(0.2, 0.8, 0.2, 1),
+    filter 0.3s;
+}
+.hero-art {
+  transform-origin: 50% 80%;
+}
+.hero-art .pixel-chess-art {
+  filter: sepia(0.4) brightness(1);
+}
+/* Promotion: float, glow, tremble, then become something else. */
+.cinema-pieces[data-phase="focus"] [data-role="hero"] .hero-lift {
+  filter: drop-shadow(0 0 4px var(--glow));
+}
+.cinema-pieces.cinema-promotion:is([data-phase="ascend"], [data-phase="reveal"])
+  [data-role="hero"]
+  .hero-lift {
+  translate: 0 -30%;
+  filter: drop-shadow(0 0 2px #fff6b0) drop-shadow(0 0 8px var(--glow))
+    drop-shadow(0 0 18px var(--glow));
+  animation: hero-bob 0.9s ease-in-out infinite alternate;
+}
+.cinema-pieces.cinema-promotion[data-phase="ascend"] [data-role="hero"] .hero-art {
+  animation: hero-tremble 0.09s steps(2) infinite;
+}
+@keyframes hero-bob {
+  from {
+    transform: translateY(4%);
+  }
+  to {
+    transform: translateY(-4%);
+  }
+}
+@keyframes hero-tremble {
+  50% {
+    translate: 1.5% -1%;
+  }
+}
+.hero-art.new {
+  opacity: 0;
+  scale: 0.4;
+  transition:
+    opacity 0.2s,
+    scale 0.4s cubic-bezier(0.3, 1.7, 0.5, 1);
+}
+.hero-art.old {
+  transition:
+    opacity 0.25s,
+    scale 0.3s,
+    filter 0.25s;
+}
+.cinema-pieces[data-swapped="true"] .hero-art.old {
+  opacity: 0;
+  scale: 1.5;
+  filter: brightness(3);
+}
+.cinema-pieces[data-swapped="true"] .hero-art.new {
+  opacity: 1;
+  scale: 1;
+}
+/* Checkmate: square up, tremble, then the king is cut in two. */
+.cinema-pieces.cinema-checkmate:is([data-phase="confront"], [data-phase="strobe"])
+  .hero-lift {
+  translate: 0 -12%;
+}
+.cinema-pieces.cinema-checkmate:is([data-phase="confront"], [data-phase="strobe"])
+  [data-role="hero"]
+  .hero-lift {
+  filter: drop-shadow(0 0 3px #fff) drop-shadow(0 0 12px var(--glow));
+  animation: hero-bob 0.6s ease-in-out infinite alternate;
+}
+.cinema-pieces.cinema-checkmate:is([data-phase="confront"], [data-phase="strobe"])
+  [data-role="victim"]
+  .hero-art {
+  animation: hero-tremble 0.07s steps(2) infinite;
+}
+.cinema-pieces.cinema-checkmate[data-phase="strobe"] [data-role="victim"] .hero-lift {
+  filter: drop-shadow(0 0 6px #fff);
+}
+.hero-art.half {
+  transition:
+    translate 0.6s cubic-bezier(0.15, 0.8, 0.3, 1),
+    rotate 0.6s cubic-bezier(0.15, 0.8, 0.3, 1),
+    opacity 0.5s 0.35s;
+}
+.hero-art.half.top {
+  clip-path: polygon(0 0, 100% 0, 100% 40%, 0 64%);
+}
+.hero-art.half.bottom {
+  clip-path: polygon(0 64%, 100% 40%, 100% 100%, 0 100%);
+}
+.cinema-pieces[data-slain="true"] .hero-art.half.top {
+  translate: 38% -42%;
+  rotate: 26deg;
+  opacity: 0;
+}
+.cinema-pieces[data-slain="true"] .hero-art.half.bottom {
+  translate: -8% 6%;
+  rotate: -9deg;
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cinema-rays,
+  .cinema-strobe,
+  .cinema-slash,
+  .cinema-bloom {
+    display: none;
+  }
+}

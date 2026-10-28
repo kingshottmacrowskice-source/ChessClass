@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { CinemaShow } from "./cinema";
 
 export type UltimateKind = "promotion" | "checkmate";
 export type UltimateShow = {
@@ -8,6 +9,8 @@ export type UltimateShow = {
   by: "w" | "b";
   video?: string;
   detail?: string;
+  /** Shot on the board with the camera instead of the cut-in/video. */
+  cinema?: CinemaShow;
 };
 const CUT_MS = 3400;
 const titles: Record<UltimateKind, { big: string; sub: string }> = {
