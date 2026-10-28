@@ -1,17 +1,14 @@
+import { PIECE_FORWARD_OFFSET } from "./boardView";
 import type { CameraRig } from "./camera";
 import { squarePoint } from "./choreography";
-import {
-  closeUpZoom,
-  faceOff,
-  script,
-  type Beat,
-  type CinemaShow,
-  type Cue,
-} from "./cinema";
+import { script, type Beat, type CinemaShow, type Cue } from "./cinema";
 import type { FxApi } from "./fx";
 import { MOVE_MS } from "./transition";
 
-type Project = (x: number, y: number) => { x: number; y: number; width: number };
+type Project = (
+  x: number,
+  y: number,
+) => { x: number; y: number; width: number };
 export type CinemaDeps = {
   fx: () => FxApi | null;
   camera: CameraRig;
@@ -71,34 +68,53 @@ export class CinemaShot {
     );
   }
 
-  /** A square's floor point (for effects) and its projected spot (for the camera). */
+  /** The same square in effect coordinates and 3D world coordinates. */
   private at(square: string) {
-    const floor = squarePoint(square),
-      s = this.deps.project(floor.x, floor.y),
-      w = s.width || 60;
-    // Aim at the piece's body, not its feet.
-    return { floor, x: s.x, y: s.y - w * 0.45, w };
+    const floor = squarePoint(square);
+    floor.y += PIECE_FORWARD_OFFSET * 12.5;
+    return { floor, x: floor.x / 12.5 - 4, z: floor.y / 12.5 - 4 };
   }
 
   private cue(c: Cue, show: CinemaShow, token: number) {
     const f = this.deps.fx(),
-      cam = this.deps.camera,
-      view = { w: window.innerWidth, h: window.innerHeight };
+      cam = this.deps.camera;
     const hero = this.at(show.square),
       victim = show.victim ? this.at(show.victim) : null;
-    const on = (a: { floor: { x: number; y: number } }, h: number) => ({ ...a.floor, h });
-    const close = closeUpZoom(hero.w, view);
-    const duel = victim ? faceOff(hero, victim, hero.w, view) : null;
+    const on = (a: { floor: { x: number; y: number } }, h: number) => ({
+      ...a.floor,
+      h,
+    });
+    const side = hero.x > 0 ? 1 : -1;
+    const close = {
+      x: hero.x,
+      z: hero.z,
+      height: 0.65,
+      distance: 3.3,
+      elevation: 0.14,
+      azimuth: side * 1.15,
+    };
+    // View perpendicular to the line between the combatants, so neither hides the other.
+    const gap = victim ? Math.hypot(hero.x - victim.x, hero.z - victim.z) : 0;
+    const duel = victim
+      ? {
+          x: (hero.x + victim.x) / 2,
+          z: (hero.z + victim.z) / 2,
+          height: 0.65,
+          distance: Math.max(4, (gap + 1.8) / 0.95),
+          elevation: 0.17,
+          azimuth: Math.atan2(victim.z - hero.z, hero.x - victim.x),
+        }
+      : null;
     const later = (ms: number, fn: () => void) =>
       setTimeout(() => token === this.token && fn(), ms);
     switch (c) {
       case "charge":
         f?.reticle(show.square, "hit", 1000);
         if (show.victim) f?.reticle(show.victim, "warn", 1600);
-        void cam.focus({ x: hero.x, y: hero.y, scale: 1.3, rot: -3 }, 460);
+        void cam.focus({ ...close, distance: 6, elevation: 0.42 }, 460);
         break;
       case "zoom":
-        void cam.focus({ x: hero.x, y: hero.y, scale: close, rot: -9 }, 640);
+        void cam.focus(close, 640);
         f?.ring(on(hero, 0.05), "#ffe46b");
         break;
       case "float":
@@ -106,7 +122,10 @@ export class CinemaShot {
         for (let i = 0; i < 4; i++) later(i * 150, () => f?.shake(0.25));
         break;
       case "glow":
-        void cam.focus({ x: hero.x, y: hero.y - hero.w * 0.25, scale: close * 1.12, rot: 6 }, 600);
+        void cam.focus(
+          { ...close, height: 0.85, azimuth: side * 1.6, distance: 2.9 },
+          600,
+        );
         f?.burst(on(hero, 0.9), "spark", { count: 22 });
         f?.ring(on(hero, 0.3), "#fff6b0");
         break;
@@ -114,7 +133,10 @@ export class CinemaShot {
         this.deps.set({ swapped: true });
         f?.flash("#fffbe8", 280);
         f?.burst(on(hero, 0.8), "stars", { count: 16 });
-        void cam.focus({ x: hero.x, y: hero.y - hero.w * 0.2, scale: close * 0.94, rot: 0 }, 300);
+        void cam.focus(
+          { ...close, height: 0.8, azimuth: side * 1.85, distance: 3.6 },
+          300,
+        );
         break;
       case "burst":
         f?.burst(on(hero, 0.8), "confetti", { count: 40 });
@@ -137,13 +159,23 @@ export class CinemaShot {
         break;
       case "strobe":
         if (duel)
-          void cam.focus({ ...duel, rot: duel.rot - 5, scale: duel.scale * 1.1 }, 900);
-        for (let i = 0; i < 7; i++) later(i * 130, () => f?.shake(0.3 + i * 0.06));
+          void cam.focus(
+            { ...duel, elevation: 0.1, azimuth: duel.azimuth + 0.12 },
+            900,
+          );
+        for (let i = 0; i < 7; i++)
+          later(i * 130, () => f?.shake(0.3 + i * 0.06));
         break;
       case "tighten":
         if (victim)
           void cam.focus(
-            { x: victim.x, y: victim.y, scale: (duel?.scale ?? close) * 1.45, rot: (duel?.rot ?? 0) + 7 },
+            {
+              ...close,
+              x: victim.x,
+              z: victim.z,
+              azimuth: duel?.azimuth ?? close.azimuth,
+              distance: 3.8,
+            },
             260,
           );
         break;
@@ -155,9 +187,10 @@ export class CinemaShot {
         break;
       case "shatter":
         if (victim) {
-          const colours = show.by === "w"
-            ? ["#24374f", "#536c8c", "#a5bdd1", "#111b2a"]
-            : ["#fff2d3", "#e1c797", "#c3ad83", "#695647"];
+          const colours =
+            show.by === "w"
+              ? ["#24374f", "#536c8c", "#a5bdd1", "#111b2a"]
+              : ["#fff2d3", "#e1c797", "#c3ad83", "#695647"];
           f?.burst(on(victim, 0.5), "shards", { count: 36, colors: colours });
           f?.burst(on(victim, 0.5), "stars", { count: 10 });
         }

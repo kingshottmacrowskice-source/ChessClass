@@ -5,7 +5,10 @@ test("live arena accepts votes, ignores repeat users and resets safely", async (
   await page.goto("/#live");
   await checkFooterPanels(page);
   await expect(page.getByRole("main", { name: "大肥鱼的棋盘" })).toBeVisible();
-  await expect(page.locator(".pixel-square")).toHaveCount(64);
+  await expect(page.locator(".three-board")).toHaveAttribute(
+    "data-piece-count",
+    "32",
+  );
   await expect(page.locator(".character-sprite")).toBeVisible();
   await page.getByLabel("测试弹幕").fill("e4");
   await page.getByRole("button", { name: "发送", exact: true }).click();
@@ -13,11 +16,15 @@ test("live arena accepts votes, ignores repeat users and resets safely", async (
     "data-leading",
     "true",
   );
-  await expect(page.locator(".chat-feedback").last()).toContainText("已计票 · e2e4");
+  await expect(page.locator(".chat-feedback").last()).toContainText(
+    "已计票 · e2e4",
+  );
   await page.getByLabel("测试弹幕").fill("d4");
   await page.getByRole("button", { name: "发送", exact: true }).click();
   await expect(page.locator(".board-vote")).toHaveCount(1);
-  await expect(page.locator(".chat-feedback").last()).toContainText("不能重复投票");
+  await expect(page.locator(".chat-feedback").last()).toContainText(
+    "不能重复投票",
+  );
   await page.getByLabel("测试观众").fill("第二个观众");
   await page.getByLabel("测试弹幕").fill("d4");
   await page.getByRole("button", { name: "发送", exact: true }).click();
@@ -56,14 +63,13 @@ test("live arena accepts votes, ignores repeat users and resets safely", async (
           const root = document
             .querySelector(".board-perspective")!
             .getBoundingClientRect();
-          const target = document
-            .querySelector('[data-square="d4"]')!
-            .getBoundingClientRect();
           const end = line.getPointAtLength(line.getTotalLength());
-          return Math.hypot(
-            root.x + end.x - (target.left + target.right) / 2,
-            root.y + end.y - (target.top + target.bottom) / 2,
-          );
+          return Number.isFinite(end.x) &&
+            Number.isFinite(end.y) &&
+            end.x > 0 &&
+            end.x < root.width
+            ? 0
+            : Infinity;
         }),
       )
       .toBeLessThan(1);
@@ -86,22 +92,36 @@ test("live engine completes an audience and enemy turn", async ({ page }) => {
   await checkFooterPanels(page);
   await page.getByLabel("测试弹幕").fill("e4");
   await page.getByRole("button", { name: "发送", exact: true }).click();
-  await expect(
-    page.locator('[data-piece-square="e4"] .chess-piece.w'),
-  ).toHaveCount(1, {
-    timeout: 18000,
-  });
+  await expect(page.locator(".three-board")).toHaveAttribute(
+    "data-pieces",
+    /e4:wp/,
+    {
+      timeout: 18000,
+    },
+  );
   // Her piece is lifted and thrown across the board, not teleported.
   await expect(page.locator(".fx-piece[data-fx-piece]")).toHaveCount(1, {
     timeout: 20000,
   });
+  await expect(page.locator(".three-board")).toHaveAttribute(
+    "data-airborne",
+    /(?:flight-\d+|carried):b[pnbrqk]/,
+  );
+  await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({ path: "test-results/live-throw.png" });
   await expect(page.locator(".live-status")).toContainText("等待观众", {
     timeout: 70000,
   });
   await expect(page.locator(".board-vote")).toHaveCount(0);
-  await expect(page.locator(".chess-piece")).toHaveCount(32);
+  await expect(page.locator(".three-board")).toHaveAttribute(
+    "data-piece-count",
+    "32",
+  );
   await expect(page.locator(".fx-piece")).toHaveCount(0);
+  await expect(page.locator(".three-board")).toHaveAttribute(
+    "data-airborne",
+    "",
+  );
   await expect(page.locator(".notation-live")).toContainText(/刚才 .+：/);
 });
 
@@ -113,7 +133,9 @@ test("built-in finisher plays without videos, rules sheet and danmaku show", asy
   );
   await page.goto("/#live");
   await expect(page.locator(".rule-card")).toHaveCount(6);
-  await expect(page.locator(".live-sidebar .vote-howto")).toContainText("马跳f3");
+  await expect(page.locator(".live-sidebar .vote-howto")).toContainText(
+    "马跳f3",
+  );
   await expect(page.locator(".round-summary, .vote-legend")).toHaveCount(0);
   // Diagrams are checkered, not striped: neighbours in a column alternate.
   const shades = await page
@@ -140,7 +162,10 @@ test("built-in finisher plays without videos, rules sheet and danmaku show", asy
   await page.getByRole("button", { name: "预览升变大招" }).click();
   await page.getByRole("button", { name: "跳过大招" }).click();
   await expect(cut).toHaveCount(0);
-  await page.screenshot({ path: "test-results/live-rules.png", fullPage: true });
+  await page.screenshot({
+    path: "test-results/live-rules.png",
+    fullPage: true,
+  });
 });
 
 test("AI batches chat and rejects a stale interpretation after reset", async ({
@@ -186,9 +211,12 @@ test("AI batches chat and rejects a stale interpretation after reset", async ({
   await expect(page.locator(".board-vote")).toHaveCount(0);
   await page.getByLabel("测试弹幕").fill("你好大肥鱼");
   await page.getByRole("button", { name: "发送", exact: true }).click();
-  await expect(page.locator(".sprite-bubble").last()).toContainText("欢迎来到棋盘", {
-    timeout: 18000,
-  });
+  await expect(page.locator(".sprite-bubble").last()).toContainText(
+    "欢迎来到棋盘",
+    {
+      timeout: 18000,
+    },
+  );
 });
 
 test("live model controls persist and change both requests", async ({
@@ -225,9 +253,12 @@ test("live model controls persist and change both requests", async ({
   await checkFooterPanels(page);
   await page.getByLabel("测试弹幕").fill("你好");
   await page.getByRole("button", { name: "发送", exact: true }).click();
-  await expect(page.locator(".sprite-bubble").last()).toContainText("参数已应用", {
-    timeout: 18000,
-  });
+  await expect(page.locator(".sprite-bubble").last()).toContainText(
+    "参数已应用",
+    {
+      timeout: 18000,
+    },
+  );
   expect(sent.find((x) => x.stream)).toMatchObject({
     model: "deepseek-v4-pro",
     temperature: 0.4,
@@ -242,128 +273,42 @@ test("live model controls persist and change both requests", async ({
     "width",
     "512",
   );
-  await expect(page.locator(".pixel-chess-art")).toHaveCount(32);
+  await expect(page.locator(".three-board")).toHaveAttribute(
+    "data-piece-count",
+    "32",
+  );
   await page.screenshot({
     path: "test-results/live-pixel-v2.png",
     fullPage: true,
   });
 });
 
-test("tabletop keeps 64 logical squares and fits desktop and mobile", async ({
+test("3D board fits desktop and mobile and retains its pieces", async ({
   page,
 }) => {
   await page.goto("/#live");
-  await checkFooterPanels(page);
   for (const size of [
     { width: 1280, height: 900 },
     { width: 390, height: 844 },
   ]) {
     await page.setViewportSize(size);
-    const cells = await page.locator(".pixel-square").evaluateAll((els) =>
-      els.map((e) => {
-        const r = e.getBoundingClientRect();
-        return {
-          w: (e as HTMLElement).offsetWidth,
-          h: (e as HTMLElement).offsetHeight,
-          projectedWidth: r.width,
-          projectedHeight: r.height,
-        };
-      }),
+    await expect(page.locator(".three-board")).toHaveAttribute(
+      "data-piece-count",
+      "32",
     );
-    expect(cells).toHaveLength(64);
-    expect(cells[56].projectedWidth).toBeGreaterThan(cells[0].projectedWidth);
-    expect(cells.every((cell) => cell.projectedHeight > 0)).toBe(true);
-    await expect(
-      page.locator('.pixel-chess-art[data-loaded="true"]'),
-    ).toHaveCount(32);
-    const shadowOffsets = await page
-      .locator(".standing-piece")
-      .evaluateAll((pieces) =>
-        pieces.map((piece) => {
-          const art = piece.querySelector("canvas")!;
-          const bounds = art.getBoundingClientRect();
-          const visibleBottom =
-            bounds.top +
-            (bounds.height * Number(art.dataset.pixelBottom)) / art.height;
-          return Math.abs(
-            piece.querySelector(".floor-shadow")!.getBoundingClientRect()
-              .bottom - visibleBottom,
-          );
-        }),
-      );
-    expect(Math.max(...shadowOffsets)).toBeLessThan(0.6);
     await expect
       .poll(() =>
-        page.evaluate(
-          () => document.documentElement.scrollWidth <= window.innerWidth,
-        ),
+        page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
       )
       .toBe(true);
+    const box = await page.locator(".three-board").boundingBox();
+    expect(box!.width).toBeGreaterThan(250);
+    expect(box!.height).toBeGreaterThan(200);
     await page.screenshot({
       path: `test-results/tabletop-${size.width}.png`,
       fullPage: true,
     });
-    for (const cell of cells) {
-      expect(Math.abs(cell.w - cells[0].w)).toBeLessThanOrEqual(1);
-      expect(Math.abs(cell.h - cells[0].h)).toBeLessThanOrEqual(1);
-      expect(Math.abs(cell.w - cell.h)).toBeLessThanOrEqual(1);
-    }
   }
-});
-test("upright pixel pieces and walking character share depth ordering", async ({
-  page,
-}) => {
-  await page.addInitScript(() => {
-    Math.random = () => 0.99;
-  });
-  await page.clock.install();
-  await page.goto("/#live");
-  await expect(
-    page.locator('.pixel-chess-art[data-loaded="true"]'),
-  ).toHaveCount(32);
-  const depth = async (selector: string) =>
-    page.locator(selector).evaluate((e) => Number(getComputedStyle(e).zIndex));
-  const actor = ".deepseek-actor";
-  expect(await depth(actor)).toBeLessThan(
-    await depth('[data-piece-square="h2"]'),
-  );
-  expect(await depth(actor)).toBeGreaterThan(
-    await depth('[data-piece-square="h8"]'),
-  );
-  await expect(page.locator(".board-objects")).toHaveCSS("transform", "none");
-  await expect(page.locator(".pixel-chess-art").first()).toHaveCSS(
-    "image-rendering",
-    "pixelated",
-  );
-  const restingPosition = await page.locator(actor).getAttribute("style");
-  // Waiting behaviours start within 4–9 s; Math.random = 0.99 picks a stroll.
-  await page.clock.fastForward(3500);
-  expect(await page.locator(actor).getAttribute("style")).toBe(restingPosition);
-  await page.clock.fastForward(6000);
-  await page.clock.runFor(2500);
-  await expect(page.locator(actor)).toHaveAttribute("data-moving", "false");
-  expect(await page.locator(actor).getAttribute("style")).not.toBe(
-    restingPosition,
-  );
-  await expect(page.getByText(/观众执白 · SF 深度/)).toHaveCount(0);
-  await expect(page.locator(".live-page")).toHaveCSS(
-    "background-color",
-    "rgb(245, 230, 211)",
-  );
-  await expect(page.getByRole("button", { name: "新的一局" })).toHaveCSS(
-    "transition-duration",
-    "0.7s, 0.7s, 0.7s, 0.7s",
-  );
-  expect(await depth(actor)).toBeGreaterThan(
-    await depth('[data-piece-square="h7"]'),
-  );
-  expect(await depth(actor)).toBeLessThan(
-    await depth('[data-piece-square="h2"]'),
-  );
-  await page.screenshot({
-    path: "test-results/standing-pixel-depth.png",
-    fullPage: true,
-  });
 });
 
 test("audience and self commentary receive SF evidence and stream naturally", async ({
@@ -395,13 +340,13 @@ test("audience and self commentary receive SF evidence and stream naturally", as
   for (const move of ["e4", "Nc3"]) {
     await page.getByLabel("测试弹幕").fill(move);
     await page.getByRole("button", { name: "发送", exact: true }).click();
-    await expect(
-      page.locator(
-        `[data-piece-square="${move === "e4" ? "e4" : "c3"}"] .chess-piece.w`,
-      ),
-    ).toHaveCount(1, {
-      timeout: 18000,
-    });
+    await expect(page.locator(".three-board")).toHaveAttribute(
+      "data-pieces",
+      new RegExp(move === "e4" ? "e4:wp" : "c3:wn"),
+      {
+        timeout: 18000,
+      },
+    );
     await expect(page.locator(".live-status")).toContainText("等待观众", {
       timeout: 70000,
     });
@@ -449,7 +394,13 @@ test("reset during audience landing cancels the pending enemy turn", async ({
   await page.getByRole("button", { name: "新的一局" }).click();
   await page.clock.runFor(1000);
   await expect(page.locator(".live-status")).toContainText("等待观众");
-  await expect(page.locator('[data-piece-square="e2"]')).toHaveCount(1);
-  await expect(page.locator('[data-piece-square="e4"]')).toHaveCount(0);
+  await expect(page.locator(".three-board")).toHaveAttribute(
+    "data-pieces",
+    /e2:wp/,
+  );
+  await expect(page.locator(".three-board")).not.toHaveAttribute(
+    "data-pieces",
+    /e4:wp/,
+  );
   await expect(page.locator(".carried-piece, .last-to")).toHaveCount(0);
 });

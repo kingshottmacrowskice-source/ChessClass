@@ -164,6 +164,7 @@ export default function livePlugin() {
             autoConnect: "boolean",
             broadcastMode: "boolean",
             liveTextScale: "number",
+            boardAngle: "number",
             persona: "string",
             modelConfig: "object",
             voiceConfig: "object",
@@ -176,6 +177,14 @@ export default function livePlugin() {
               Array.isArray(value)
             )
               return send(400, { error: "Invalid settings" });
+          }
+          if (Object.hasOwn(patch, "boardAngle")) {
+            if (!Number.isFinite(patch.boardAngle))
+              return send(400, { error: "Invalid board angle" });
+            patch.boardAngle = Math.max(
+              30,
+              Math.min(90, Math.round(patch.boardAngle)),
+            );
           }
           const write = writes.then(async () => {
             const settings = { ...(await read()), ...patch };

@@ -199,7 +199,7 @@ export function liftPath(at: Point, head: Point, h1 = 0.75): Path {
         ...mixPoint(at, head, e),
         h: lerp(0, h1, e) + 0.25 * Math.sin(Math.PI * t),
         rot: 0,
-        scale: lerp(1, 0.8, e),
+        scale: 1,
         alpha: 1,
       };
     },

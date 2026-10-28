@@ -106,6 +106,31 @@ export default function LiveSettings() {
         <small>
           放大角色对话、弹幕、规则和状态文字，棋盘大小不变。自动同步到直播源，无需刷新。
         </small>
+        <label>
+          棋盘俯视角度：{settings.boardAngle}°
+          {settings.boardAngle === 90 ? "（垂直俯视）" : ""}
+          <input
+            aria-label="棋盘俯视角度"
+            type="range"
+            min="30"
+            max="90"
+            step="1"
+            value={settings.boardAngle}
+            onChange={(e) => set({ boardAngle: Number(e.target.value) })}
+          />
+        </label>
+        <div className="persona-presets">
+          <button type="button" onClick={() => set({ boardAngle: 58 })}>
+            默认视角
+          </button>
+          <button type="button" onClick={() => set({ boardAngle: 90 })}>
+            90° 垂直俯视
+          </button>
+        </div>
+        <small>
+          角度越大越接近正上方，30°–90°
+          可调。自动保存并同步；大招特写结束后回到此角度。
+        </small>
       </section>
       <section className="settings-panel">
         <h2>直播间</h2>
@@ -159,7 +184,8 @@ export default function LiveSettings() {
           />
         </label>
         <small>
-          100% 只走最优着法（最强）；调低后大肥鱼会偶尔走次优着法、甚至乱走送子，方便新手赢棋。
+          100%
+          只走最优着法（最强）；调低后大肥鱼会偶尔走次优着法、甚至乱走送子，方便新手赢棋。
         </small>
         <label>
           走棋点评频率：{settings.commentaryRate}%

@@ -1,3 +1,4 @@
+import { boardAngle, DEFAULT_BOARD_ANGLE } from "./boardView";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { readModelConfig, type ModelConfig } from "./core";
 import { readVoiceConfig, type VoiceConfig } from "./voice";
@@ -8,6 +9,7 @@ export type LiveSettings = {
   autoConnect: boolean;
   broadcastMode: boolean;
   liveTextScale: number;
+  boardAngle: number;
   depth: number;
   difficulty: number;
   commentaryRate: number;
@@ -28,6 +30,7 @@ function readControl(): Pick<
   | "autoConnect"
   | "broadcastMode"
   | "liveTextScale"
+  | "boardAngle"
   | "depth"
   | "difficulty"
   | "commentaryRate"
@@ -42,6 +45,7 @@ function readControl(): Pick<
       liveTextScale: Number.isFinite(v.liveTextScale)
         ? Math.max(125, Math.min(200, v.liveTextScale))
         : 150,
+      boardAngle: boardAngle(v.boardAngle),
       depth: Number.isFinite(v.depth)
         ? Math.max(1, Math.min(6, Math.round(v.depth)))
         : 2,
@@ -59,6 +63,7 @@ function readControl(): Pick<
       autoConnect: true,
       broadcastMode: false,
       liveTextScale: 150,
+      boardAngle: DEFAULT_BOARD_ANGLE,
       depth: 2,
       difficulty: 100,
       commentaryRate: 35,
@@ -93,6 +98,7 @@ function persist(next: LiveSettings) {
         autoConnect: next.autoConnect,
         broadcastMode: next.broadcastMode,
         liveTextScale: next.liveTextScale,
+        boardAngle: next.boardAngle,
         depth: next.depth,
         difficulty: next.difficulty,
         commentaryRate: next.commentaryRate,

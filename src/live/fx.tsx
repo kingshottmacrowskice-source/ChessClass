@@ -7,13 +7,18 @@ import {
   type RefObject,
 } from "react";
 import ChessPiece from "./ChessPiece";
+import { boardViews } from "./camera";
 import { squarePoint, SQUARE, type Path, type Sample } from "./choreography";
 import type { Point } from "./motion";
 
-type Project = (x: number, y: number) => { x: number; y: number; width: number };
+type Project = (
+  x: number,
+  y: number,
+) => { x: number; y: number; width: number };
 export type At = Point & { h?: number };
 export type Tone = "hit" | "good" | "warn" | "info";
-export type BurstKind = "dust" | "stars" | "shards" | "spark" | "confetti" | "zzz";
+export type BurstKind =
+  "dust" | "stars" | "shards" | "spark" | "confetti" | "zzz";
 export type FxApi = {
   /** Fly a piece along a path; resolves when it comes to rest (or the layer is cleared). */
   fly(o: {
@@ -22,7 +27,11 @@ export type FxApi = {
     path: Path;
     onContact?: (index: number, at: Sample) => void;
   }): Promise<void>;
-  burst(at: At, kind: BurstKind, o?: { colors?: string[]; count?: number; dir?: Point }): void;
+  burst(
+    at: At,
+    kind: BurstKind,
+    o?: { colors?: string[]; count?: number; dir?: Point },
+  ): void;
   text(at: At, text: string, tone?: Tone, size?: number): void;
   ring(at: At, color?: string): void;
   tracer(from: At, to: At): void;
@@ -59,10 +68,41 @@ type Particle = {
 };
 type Effect =
   | Particle
-  | { kind: "text"; x: number; y: number; text: string; tone: Tone; size: number; born: number; life: number }
-  | { kind: "ring"; x: number; y: number; r: number; color: string; born: number; life: number }
-  | { kind: "tracer"; x1: number; y1: number; x2: number; y2: number; born: number; life: number }
-  | { kind: "reticle"; corners: Point[]; tone: Tone; born: number; life: number }
+  | {
+      kind: "text";
+      x: number;
+      y: number;
+      text: string;
+      tone: Tone;
+      size: number;
+      born: number;
+      life: number;
+    }
+  | {
+      kind: "ring";
+      x: number;
+      y: number;
+      r: number;
+      color: string;
+      born: number;
+      life: number;
+    }
+  | {
+      kind: "tracer";
+      x1: number;
+      y1: number;
+      x2: number;
+      y2: number;
+      born: number;
+      life: number;
+    }
+  | {
+      kind: "reticle";
+      corners: Point[];
+      tone: Tone;
+      born: number;
+      life: number;
+    }
   | { kind: "flash"; color: string; born: number; life: number };
 type Flight = {
   id: number;
@@ -120,6 +160,17 @@ const FxLayer = forwardRef<
         (f) => now - f.born < f.path.duration,
       );
       setShown([...flights.current]);
+      if (shakeTarget.current)
+        boardViews
+          .get(shakeTarget.current)
+          ?.flights(
+            flights.current.map((f) => ({
+              id: f.id,
+              piece: f.piece,
+              color: f.color,
+              s: { ...f.s },
+            })),
+          );
     }
     if (c) {
       const parent = c.parentElement!;
@@ -253,6 +304,17 @@ const FxLayer = forwardRef<
         };
         flights.current.push(f);
         setShown([...flights.current]);
+        if (shakeTarget.current)
+          boardViews
+            .get(shakeTarget.current)
+            ?.flights(
+              flights.current.map((f) => ({
+                id: f.id,
+                piece: f.piece,
+                color: f.color,
+                s: { ...f.s },
+              })),
+            );
         run();
       });
     },
@@ -262,7 +324,9 @@ const FxLayer = forwardRef<
         u = p.u;
       const count =
         o.count ??
-        { dust: 10, stars: 9, shards: 28, spark: 14, confetti: 46, zzz: 1 }[kind];
+        { dust: 10, stars: 9, shards: 28, spark: 14, confetti: 46, zzz: 1 }[
+          kind
+        ];
       for (let i = 0; i < count; i++) {
         const a = Math.random() * Math.PI * 2;
         const base: Particle = {
@@ -305,7 +369,9 @@ const FxLayer = forwardRef<
           const colors = o.colors ?? pieceColors("w");
           add({
             ...base,
-            vx: Math.cos(a) * u * (1.5 + Math.random() * 3.5) + (o.dir?.x ?? 0) * u * 2,
+            vx:
+              Math.cos(a) * u * (1.5 + Math.random() * 3.5) +
+              (o.dir?.x ?? 0) * u * 2,
             vy: Math.sin(a) * u * (1 + Math.random() * 2.5) - u * 2.2,
             g: u * 9,
             size: u * (0.06 + Math.random() * 0.1),
@@ -330,7 +396,13 @@ const FxLayer = forwardRef<
             g: u * 6,
             drag: 0.6,
             size: u * (0.08 + Math.random() * 0.06),
-            color: (o.colors ?? ["#ffd84a", "#5ab0ff", "#ff6b8b", "#7dffb0", "#ffffff"])[i % 5],
+            color: (o.colors ?? [
+              "#ffd84a",
+              "#5ab0ff",
+              "#ff6b8b",
+              "#7dffb0",
+              "#ffffff",
+            ])[i % 5],
             life: 1400 + Math.random() * 800,
           });
         } else if (kind === "zzz") {
@@ -362,12 +434,28 @@ const FxLayer = forwardRef<
     },
     ring(at, color = "#fff2c4") {
       const p = screen(at);
-      add({ kind: "ring", x: p.x, y: p.y, r: p.u * 1.3, color, born: performance.now(), life: 520 });
+      add({
+        kind: "ring",
+        x: p.x,
+        y: p.y,
+        r: p.u * 1.3,
+        color,
+        born: performance.now(),
+        life: 520,
+      });
     },
     tracer(from, to) {
       const a = screen(from),
         b = screen(to);
-      add({ kind: "tracer", x1: a.x, y1: a.y, x2: b.x, y2: b.y, born: performance.now(), life: 160 });
+      add({
+        kind: "tracer",
+        x1: a.x,
+        y1: a.y,
+        x2: b.x,
+        y2: b.y,
+        born: performance.now(),
+        life: 160,
+      });
     },
     reticle(square, tone, ms = 1300) {
       const c = squarePoint(square),
@@ -381,7 +469,13 @@ const FxLayer = forwardRef<
         const p = projectRef.current(c.x + dx * r, c.y + dy * r);
         return { x: p.x, y: p.y };
       });
-      add({ kind: "reticle", corners, tone, born: performance.now(), life: ms });
+      add({
+        kind: "reticle",
+        corners,
+        tone,
+        born: performance.now(),
+        life: ms,
+      });
     },
     flash(color = "#fffbe8", ms = 220) {
       add({ kind: "flash", color, born: performance.now(), life: ms });
@@ -412,9 +506,16 @@ const FxLayer = forwardRef<
       flights.current = [];
       old.forEach((f) => f.done());
       setShown([]);
+      if (shakeTarget.current) boardViews.get(shakeTarget.current)?.flights([]);
     },
   }));
-  useEffect(() => () => cancelAnimationFrame(loop.current), []);
+  useEffect(
+    () => () => {
+      cancelAnimationFrame(loop.current);
+      if (shakeTarget.current) boardViews.get(shakeTarget.current)?.flights([]);
+    },
+    [],
+  );
 
   return (
     <>

@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   attackSpot,
+  liftPath,
   knockPath,
   pickStyle,
   squarePoint,
@@ -22,13 +23,35 @@ describe("thrown pieces", () => {
       expect(end.y).toBeCloseTo(to.y, 6);
       expect(end.h).toBeCloseTo(0, 6);
       expect(p.contacts.at(-1)! <= 1).toBe(true);
-      for (let i = 0; i <= 100; i++) expect(p.sample(i / 100).h).toBeGreaterThanOrEqual(0);
+      for (let i = 0; i <= 100; i++)
+        expect(p.sample(i / 100).h).toBeGreaterThanOrEqual(0);
     });
+  it("keeps the same size when lifting, carrying, throwing and landing", () => {
+    const lift = liftPath(to, from);
+    expect(lift.sample(0).scale).toBe(1);
+    const carried = lift.sample(1);
+    expect(carried.scale).toBe(1);
+    for (const landing of ["bounce", "slide", "slam"] as const) {
+      const path = throwPath(landing, from, to);
+      expect(path.sample(0)).toMatchObject({
+        x: carried.x,
+        y: carried.y,
+        h: carried.h,
+        scale: carried.scale,
+      });
+      expect(path.sample(1).scale).toBeCloseTo(1);
+    }
+  });
   it("bounces twice after the first landing, each hop lower", () => {
     const p = throwPath("bounce", from, to);
     expect(p.contacts).toHaveLength(3);
     const peak = (a: number, b: number) =>
-      Math.max(...Array.from({ length: 50 }, (_, i) => p.sample(a + ((b - a) * i) / 49).h));
+      Math.max(
+        ...Array.from(
+          { length: 50 },
+          (_, i) => p.sample(a + ((b - a) * i) / 49).h,
+        ),
+      );
     const [c1, c2] = p.contacts;
     expect(p.sample(c1).h).toBeCloseTo(0, 6);
     expect(peak(c1, c2)).toBeGreaterThan(peak(c2, 1));
@@ -70,8 +93,10 @@ describe("clip timing", () => {
 
 describe("chat memory", () => {
   it("treats floods and filler as noise", () => {
-    for (const t of ["666", "哈哈哈哈", "？？？", "  ", "hhhh", "草"]) expect(isNoise(t)).toBe(true);
-    for (const t of ["e4", "大肥鱼好可爱", "马到f3"]) expect(isNoise(t)).toBe(false);
+    for (const t of ["666", "哈哈哈哈", "？？？", "  ", "hhhh", "草"])
+      expect(isNoise(t)).toBe(true);
+    for (const t of ["e4", "大肥鱼好可爱", "马到f3"])
+      expect(isNoise(t)).toBe(false);
   });
   it("greets new viewers once, folds noise and duplicates", () => {
     const m = new ChatMemory();
@@ -88,7 +113,9 @@ describe("chat memory", () => {
   it("merges the same message from many viewers", () => {
     const m = new ChatMemory();
     for (let i = 0; i < 5; i++) m.addChat(String(i), "v" + i, "大肥鱼加油", i);
-    expect(m.take({}).newEvents.filter((e) => e.includes("大肥鱼加油 ×5"))).toHaveLength(1);
+    expect(
+      m.take({}).newEvents.filter((e) => e.includes("大肥鱼加油 ×5")),
+    ).toHaveLength(1);
   });
   it("keeps history bounded and compresses overflow into a summary", () => {
     const m = new ChatMemory();

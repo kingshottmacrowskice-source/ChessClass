@@ -80,7 +80,7 @@ test("settings reach an isolated live source without clicks or reloads", async (
     await editor.goto("http://127.0.0.1:5174/live-settings");
     await expect(editor.getByRole("status")).toContainText("已同步");
     const boardWidth = await source
-      .locator(".pixel-board")
+      .locator(".three-board")
       .evaluate((el) => el.getBoundingClientRect().width);
     await editor.getByLabel("直播模式（放大 LIVE 页字号）").check();
     await expect(source.locator(".rule-text p").first()).toHaveCSS(
@@ -95,7 +95,7 @@ test("settings reach an isolated live source without clicks or reloads", async (
     );
     expect(
       await source
-        .locator(".pixel-board")
+        .locator(".three-board")
         .evaluate((el) => el.getBoundingClientRect().width),
     ).toBe(boardWidth);
     await source.screenshot({
@@ -149,5 +149,70 @@ test("settings reach an isolated live source without clicks or reloads", async (
     await editorContext.close();
     await sourceContext.close();
     await request.patch("/api/live/settings", { data: previous ?? defaults });
+  }
+});
+
+test("board angle syncs to 90 degrees and survives reloads and cinema", async ({
+  browser,
+  request,
+}) => {
+  const previous = (await (await request.get("/api/live/settings")).json())
+    .settings;
+  const editorContext = await browser.newContext(),
+    sourceContext = await browser.newContext({
+      viewport: { width: 1280, height: 900 },
+    });
+  try {
+    await request.patch("/api/live/settings", { data: { boardAngle: 58 } });
+    const editor = await editorContext.newPage(),
+      source = await sourceContext.newPage();
+    await editor.goto("/#live-settings");
+    await source.goto("/#live");
+    await expect(editor.getByRole("status")).toContainText("已同步");
+    await editor.getByRole("button", { name: "90° 垂直俯视" }).click();
+    await expect(source.locator(".three-board")).toHaveAttribute(
+      "data-elevation",
+      String(Math.PI / 2),
+    );
+    await source.screenshot({ path: "test-results/board-top-down.png" });
+    await source.reload();
+    await expect(source.locator(".three-board")).toHaveAttribute(
+      "data-elevation",
+      String(Math.PI / 2),
+    );
+    await source.getByRole("button", { name: "预览升变运镜" }).click();
+    await expect(source.locator(".board-perspective")).toHaveClass(/camera-on/);
+    await source.getByRole("button", { name: "跳过大招" }).click();
+    await expect(source.locator(".three-board")).toHaveAttribute(
+      "data-elevation",
+      String(Math.PI / 2),
+    );
+    await source.getByRole("button", { name: "预览升变运镜" }).click();
+    await expect(source.locator(".board-perspective")).toHaveClass(/camera-on/);
+    await editor.getByLabel("棋盘俯视角度", { exact: true }).fill("65");
+    await expect(source.locator("[data-cinema]")).toHaveCount(0, {
+      timeout: 8000,
+    });
+    await expect(source.locator(".three-board")).toHaveAttribute(
+      "data-elevation",
+      String((65 * Math.PI) / 180),
+    );
+    await editor.reload();
+    await expect(
+      editor.getByLabel("棋盘俯视角度", { exact: true }),
+    ).toHaveValue("65");
+    await editor.getByLabel("棋盘俯视角度", { exact: true }).fill("30");
+    await expect(source.locator(".three-board")).toHaveAttribute(
+      "data-elevation",
+      String((30 * Math.PI) / 180),
+    );
+    await source.evaluate(() => window.scrollTo(0, 0));
+    await source.screenshot({ path: "test-results/board-low-angle.png" });
+  } finally {
+    await editorContext.close();
+    await sourceContext.close();
+    await request.patch("/api/live/settings", {
+      data: { boardAngle: 58, ...previous },
+    });
   }
 });

@@ -1,6 +1,5 @@
 import {
   useEffect,
-  useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -13,14 +12,14 @@ import { logLive } from "./log";
 import "./live.css";
 import "./live-fx.css";
 import "./broadcast.css";
-import ChessPiece from "./ChessPiece";
+import ThreeBoard from "./ThreeBoard";
 import BoardVotes from "./BoardVotes";
 import Actor, { type Emote } from "./Actor";
 import FxLayer, { pieceColors, type FxApi } from "./fx";
 import Ultimate, { type UltimateKind, type UltimateShow } from "./Ultimate";
 import { CameraRig, mountCamera } from "./camera";
 import { cinemaRoll, type Beat, type CinemaShow } from "./cinema";
-import { CinemaFrame, CinemaPieces } from "./CinemaFrame";
+import { CinemaFrame } from "./CinemaFrame";
 import { CinemaShot } from "./cinemaShot";
 import "./cinema.css";
 import RulesPanel from "./RulesPanel";
@@ -34,7 +33,7 @@ import {
   type CommentaryKind,
 } from "./commentary";
 import { useWalker, roamTarget, type Point } from "./motion";
-import { MOVE_MS, easeMove, movingFrom } from "./transition";
+import { MOVE_MS, easeMove } from "./transition";
 import {
   attackSpot,
   knockPath,
@@ -232,7 +231,8 @@ export default function LiveMode({ exit }: { exit: () => void }) {
       })
       .finally(() => {
         endStream(bubbleLease);
-        if (said.trim()) logLive({ type: "speech", kind: "commentary", text: said });
+        if (said.trim())
+          logLive({ type: "speech", kind: "commentary", text: said });
         memory.current.addSaid(said);
         if (said.trim()) void voiceRef.current.speak(said).catch(() => {});
         if (revision === narrationVersion.current) {
@@ -379,8 +379,7 @@ export default function LiveMode({ exit }: { exit: () => void }) {
     let result = "",
       vote = false;
     if (game.current.isGameOver()) result = "对局已结束";
-    else if (isSurrender(m.text))
-      result = acceptSurrender(m);
+    else if (isSurrender(m.text)) result = acceptSurrender(m);
     else if (game.current.turn() !== "w" || busy.current)
       result = "已收到 · 下轮白方回合再投票";
     else {
@@ -666,9 +665,11 @@ export default function LiveMode({ exit }: { exit: () => void }) {
           if (token === epoch.current) {
             const speech = stripBgmCommand(said);
             if (wantsBgmNext(said)) musicRef.current.requestNext();
-            if (speech.trim()) logLive({ type: "speech", kind: "chat", text: speech });
+            if (speech.trim())
+              logLive({ type: "speech", kind: "chat", text: speech });
             memory.current.addSaid(speech);
-            if (speech.trim()) void voiceRef.current.speak(speech).catch(() => {});
+            if (speech.trim())
+              void voiceRef.current.speak(speech).catch(() => {});
             compress(token);
           }
         });
@@ -728,11 +729,23 @@ export default function LiveMode({ exit }: { exit: () => void }) {
         : (mine.find((p) => p.type === "q") ?? mine[0]);
     if (!hero) return;
     if (kind === "promotion")
-      special(kind, "b", undefined, { hero: hero.type, square: hero.square, promo: "q" }, true);
+      special(
+        kind,
+        "b",
+        undefined,
+        { hero: hero.type, square: hero.square, promo: "q" },
+        true,
+      );
     else {
       const king = pieces.find((p) => p.color === "w" && p.type === "k");
       if (king)
-        special(kind, "b", undefined, { hero: hero.type, square: hero.square, victim: king.square }, true);
+        special(
+          kind,
+          "b",
+          undefined,
+          { hero: hero.type, square: hero.square, victim: king.square },
+          true,
+        );
     }
   };
   /** Board consequences of any committed move: reactions, effects and finishers. */
@@ -790,7 +803,11 @@ export default function LiveMode({ exit }: { exit: () => void }) {
       // 被将死后 30 秒自动重开。
       const token = epoch.current;
       setTimeout(() => {
-        if (alive.current && token === epoch.current && game.current.isGameOver())
+        if (
+          alive.current &&
+          token === epoch.current &&
+          game.current.isGameOver()
+        )
           reset();
       }, 30000);
     } else if (g.isDraw()) {
@@ -1247,8 +1264,6 @@ export default function LiveMode({ exit }: { exit: () => void }) {
     }, 1000);
     return () => clearInterval(timer);
   }, []);
-  const board = useMemo(() => new Chess(fen), [fen]);
-  const squares = useMemo(() => board.board().flat(), [board]);
   const shownPose = moving ? (carried ? "carry" : "walk") : pose.key;
   const tally = round.current.tally();
   const surrenderLabel = surrenderRef.current.votes.size
@@ -1263,19 +1278,6 @@ export default function LiveMode({ exit }: { exit: () => void }) {
       )
     : 0;
   const at = project(actor.x, actor.y);
-  // Squares whose real pieces are swapped for the close-up cast mid-shot.
-  const filming = cut && beat.phase !== "lead";
-  const cast = filming ? [cut.square, cut.victim] : [];
-  const castBox = (square: string) => {
-    const floor = point(square),
-      s = project(floor.x, floor.y);
-    return {
-      left: s.x,
-      top: s.y,
-      width: s.width * 0.76,
-      height: s.width * 0.96,
-    };
-  };
   void version;
   return (
     <main
@@ -1299,126 +1301,34 @@ export default function LiveMode({ exit }: { exit: () => void }) {
               <i /> {phase}
             </span>
             <span className="vote-clock" role="status">
-              {(
-                tally.length
-                  ? `${remaining} 秒后落子 · ${round.current.votes.size} 票`
-                  : game.current.isGameOver()
-                    ? "对局结束"
-                    : busy.current || game.current.turn() === "b"
-                      ? "本轮投票已锁定"
-                      : "等待第一票"
-              ) + surrenderLabel}
+              {(tally.length
+                ? `${remaining} 秒后落子 · ${round.current.votes.size} 票`
+                : game.current.isGameOver()
+                  ? "对局结束"
+                  : busy.current || game.current.turn() === "b"
+                    ? "本轮投票已锁定"
+                    : "等待第一票") + surrenderLabel}
             </span>
           </div>
           <div className="board-perspective" ref={projectionRef}>
-            <div className="pixel-board sculpted-board">
-              {squares.map((_, i) => {
-                const square =
-                  String.fromCharCode(97 + (i % 8)) + (8 - Math.floor(i / 8));
-                return (
-                  <div
-                    key={square}
-                    data-square={square}
-                    className={
-                      "pixel-square " +
-                      ((i + Math.floor(i / 8)) % 2 ? "dark" : "light") +
-                      (lastMove?.from === square ? " last-from" : "") +
-                      (lastMove?.to === square ? " last-to" : "")
-                    }
-                  >
-                    <small>{square}</small>
-                  </div>
-                );
-              })}
-            </div>
+            <ThreeBoard
+              fen={fen}
+              boardAngle={settings.boardAngle}
+              actor={actor}
+              facing={facing}
+              carried={carried}
+              hidden={hidden}
+              move={visualMove}
+              progress={moveProgress}
+              lastMove={lastMove}
+              show={cut}
+              beat={beat}
+            />
             {projectionReady && <BoardVotes tally={tally} project={project} />}
             <div
               className="board-objects"
               style={{ visibility: projectionReady ? "visible" : "hidden" }}
             >
-              {squares.map((p, i) => {
-                const square =
-                  String.fromCharCode(97 + (i % 8)) + (8 - Math.floor(i / 8));
-                if (!p || hidden.includes(square) || cast.includes(square))
-                  return null;
-                const floor = point(square),
-                  at = project(floor.x, floor.y);
-                const origin = movingFrom(visualMove, square);
-                const arriving = origin !== null;
-                const from = origin ? point(origin) : floor;
-                const source = project(from.x, from.y);
-                const mix = (a: number, b: number) =>
-                  arriving ? a + (b - a) * moveProgress : b;
-                return (
-                  <div
-                    key={square}
-                    data-piece-square={square}
-                    className="standing-piece"
-                    style={{
-                      left: mix(source.x, at.x),
-                      top: mix(source.y, at.y),
-                      width: mix(source.width, at.width) * 0.76,
-                      height: mix(source.width, at.width) * 0.96,
-                      zIndex: Math.round(mix(source.y, at.y) * 10),
-                    }}
-                  >
-                    <span className="floor-shadow" />
-                    <span
-                      className={"chess-piece " + p.color}
-                      style={
-                        arriving
-                          ? {
-                              transform: `translateY(${-Math.sin(Math.PI * moveProgress) * at.width * (p.type === "n" ? 0.38 : 0.08)}px)`,
-                            }
-                          : undefined
-                      }
-                    >
-                      {" "}
-                      <ChessPiece
-                        type={
-                          arriving &&
-                          visualMove?.to === square &&
-                          moveProgress < 1
-                            ? visualMove.piece
-                            : p.type
-                        }
-                        color={p.color}
-                      />
-                    </span>
-                  </div>
-                );
-              })}{" "}
-              {visualMove?.color === "w" &&
-                visualMove.captured &&
-                moveProgress < 0.8 &&
-                (() => {
-                  const square = visualMove.isEnPassant()
-                    ? visualMove.to[0] + visualMove.from[1]
-                    : visualMove.to;
-                  const at = project(point(square).x, point(square).y);
-                  return (
-                    <div
-                      className="standing-piece captured-ghost"
-                      style={{
-                        left: at.x,
-                        top: at.y,
-                        width: at.width * 0.76,
-                        height: at.width * 0.96,
-                        zIndex: Math.round(at.y * 10) - 1,
-                      }}
-                    >
-                      <ChessPiece type={visualMove.captured} color="b" />
-                    </div>
-                  );
-                })()}
-              {filming && projectionReady && (
-                <CinemaPieces
-                  show={cut}
-                  beat={beat}
-                  hero={castBox(cut.square)}
-                  victim={cut.victim ? castBox(cut.victim) : undefined}
-                />
-              )}
               <Actor
                 at={at}
                 pose={shownPose}

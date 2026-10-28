@@ -3,7 +3,10 @@ import { test, expect } from "@playwright/test";
 /** 破坏棋子的瞬间，棋盘要明显震动。 */
 test("destroying a piece rattles the board", async ({ page }) => {
   await page.goto("/#live");
-  await expect(page.locator(".pixel-square")).toHaveCount(64);
+  await expect(page.locator(".three-board")).toHaveAttribute(
+    "data-piece-count",
+    "32",
+  );
   await expect(
     page.getByRole("button", { name: "预览吃子震动" }),
   ).toBeEnabled();
