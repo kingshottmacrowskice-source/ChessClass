@@ -135,7 +135,8 @@ export default function ThreeBoard(props: Props) {
     };
     const scene = new T.Scene();
     const camera = new T.PerspectiveCamera(38, 1, 0.08, 100);
-    scene.add(new T.HemisphereLight(0xe7f5ff, 0x4a3a28, 3));
+    const hemi = new T.HemisphereLight(0xe7f5ff, 0x4a3a28, 3);
+    scene.add(hemi);
     const light = new T.DirectionalLight(0xfff8f0, 1.65);
     light.position.set(-4, 8, 5);
     light.castShadow = true;
@@ -153,6 +154,11 @@ export default function ThreeBoard(props: Props) {
     const rim = new T.DirectionalLight(0xb5d0ff, 0.4);
     rim.position.set(5, 4, -5);
     scene.add(rim);
+    // Practicals for the finishers: a pool of light under each featured piece.
+    const heroLight = new T.PointLight(0xffd27a, 0, 4.5, 1.6),
+      victimLight = new T.PointLight(0xff3b2a, 0, 4.5, 1.6);
+    scene.add(heroLight, victimLight);
+    const lights = { hemi: 3, sun: 1.65, rim: 0.4, hero: 0, victim: 0 };
     const box = (w: number, h: number, d: number, color: number, y: number) => {
       const m = new T.Mesh(
         new T.BoxGeometry(w, h, d),
@@ -235,12 +241,28 @@ export default function ThreeBoard(props: Props) {
       height = 1,
       pose = boardHome(latest.current.boardAngle),
       signature = "",
-      frame = 0;
-    let halves: { group: T.Group; plane: T.Plane; local: T.Plane }[] = [];
+      frame = 0,
+      lastNow = 0,
+      phase = "",
+      phaseAt = 0,
+      slainAt = 0,
+      swappedAt = 0;
+    // Billboards face the camera without its dutch roll, so pieces stay upright on the board.
+    const billboard = new T.Quaternion();
+    let halves: {
+      group: T.Group;
+      plane: T.Plane;
+      local: T.Plane;
+      upper: boolean;
+    }[] = [];
     const objects = new Map<string, T.Group>();
     const notify = () => host.dispatchEvent(new Event("board-view"));
     const applyPose = (p: CameraPose) => {
       pose = { ...p };
+      if (camera.fov !== p.fov) {
+        camera.fov = p.fov;
+        camera.updateProjectionMatrix();
+      }
       const distance = p.distance * Math.max(1, 1 / camera.aspect);
       camera.position.set(
         p.x + Math.sin(p.azimuth) * Math.cos(p.elevation) * distance,
@@ -254,10 +276,13 @@ export default function ThreeBoard(props: Props) {
         p.elevation >= Math.PI / 2 - 1e-6 ? -1 : 0,
       );
       camera.lookAt(p.x, p.height, p.z);
+      billboard.copy(camera.quaternion);
+      if (p.roll) camera.rotateZ(p.roll);
       camera.updateMatrixWorld();
       element.dataset.elevation = String(p.elevation);
       element.dataset.azimuth = String(p.azimuth);
       element.dataset.distance = String(p.distance);
+      element.dataset.fov = String(p.fov);
       notify();
     };
     const screen = (v: T.Vector3) => {
@@ -326,6 +351,16 @@ export default function ThreeBoard(props: Props) {
       actorSprite.visible = !host.classList.contains("camera-on");
       const p = latest.current,
         show = p.show && p.beat.phase !== "lead" ? p.show : undefined;
+      const dt = Math.min(0.05, Math.max(0, now - lastNow) / 1000);
+      lastNow = now;
+      if (phase !== p.beat.phase) {
+        phase = p.beat.phase;
+        phaseAt = now;
+      }
+      if (!p.beat.slain) slainAt = 0;
+      else if (!slainAt) slainAt = now;
+      if (!p.beat.swapped) swappedAt = 0;
+      else if (!swappedAt) swappedAt = now;
       if (cachedFen !== p.fen) {
         cachedFen = p.fen;
         cachedPieces = new Chess(p.fen)
@@ -387,12 +422,8 @@ export default function ThreeBoard(props: Props) {
                   m.material.side = T.DoubleSide;
                 }
               });
-              if (upper) {
-                half.position.set(0.32, 0.12, 0);
-                half.rotation.z = -0.38;
-              }
               obj.add(half);
-              halves.push({ group: half, plane, local });
+              halves.push({ group: half, plane, local, upper });
             }
           } else obj = piece(e.type, e.color);
           obj.position.copy(squarePosition(e.square));
@@ -416,8 +447,32 @@ export default function ThreeBoard(props: Props) {
           obj.position.y =
             Math.sin(p.progress * Math.PI) * (e.type === "n" ? 0.35 : 0.07);
         }
-        if (show?.square === e.square && p.beat.phase === "ascend")
-          obj.position.y = 0.22 + Math.sin(now * 0.006) * 0.05;
+        if (show?.square === e.square) {
+          const ease = (t: number) => 1 - (1 - Math.min(1, t)) ** 3;
+          if (p.beat.phase === "ascend")
+            // Lift off slowly, then hang and tremble as the power builds.
+            obj.position.y =
+              ease((now - phaseAt) / 1100) * 0.34 +
+              Math.sin(now * 0.005) * 0.03 +
+              (Math.random() - 0.5) * 0.012 * ease((now - phaseAt) / 1600);
+          else if (show.kind === "promotion" && swappedAt)
+            // The new piece lands with weight: drop, then a small bounce.
+            obj.position.y =
+              0.34 * Math.max(0, 1 - (now - swappedAt) / 260) +
+              Math.abs(
+                Math.sin(Math.min(1, (now - swappedAt) / 520) * Math.PI),
+              ) *
+                0.05 *
+                Math.max(0, 1 - (now - swappedAt) / 520);
+        }
+        if (
+          show?.victim === e.square &&
+          !p.beat.slain &&
+          p.beat.phase === "strobe"
+        )
+          // The king's nerve breaks: a growing shiver.
+          obj.position.x +=
+            (Math.random() - 0.5) * 0.05 * Math.min(1, (now - phaseAt) / 900);
         // Foreground pieces must not block a low camera's view of the featured pieces.
         let occludes = false;
         if (show && e.square !== show.square && e.square !== show.victim) {
@@ -519,7 +574,7 @@ export default function ThreeBoard(props: Props) {
             ) / 40;
           // The visible bottom pixel is the pivot, even as the camera descends.
           const lift = (bottom - 0.5) * obj.userData.height;
-          obj.quaternion.copy(camera.quaternion);
+          obj.quaternion.copy(billboard);
           if (obj.parent?.userData.spin) obj.rotateZ(obj.parent.userData.spin);
           obj.position.set(0, lift, 0).applyQuaternion(obj.quaternion);
         }
@@ -535,6 +590,61 @@ export default function ThreeBoard(props: Props) {
       };
       cast.traverse(alignBillboard);
       transient.traverse(alignBillboard);
+      // The cut king parts along the blade, the crown sliding off and falling away.
+      const cut = slainAt ? Math.min(1, (now - slainAt) / 900) : 0,
+        slide = 1 - (1 - cut) ** 3;
+      halves.forEach((h) => {
+        if (!h.upper) return;
+        h.group.position.set(
+          0.42 * slide,
+          0.14 * Math.sin(slide * Math.PI * 0.7) - 0.3 * cut * cut,
+          0,
+        );
+        h.group.rotation.z = -0.62 * slide;
+      });
+      // Lights down on the room, up on the featured pieces.
+      const want = !show
+        ? { hemi: 3, sun: 1.65, rim: 0.4, hero: 0, victim: 0 }
+        : show.kind === "promotion"
+          ? p.beat.phase === "out"
+            ? { hemi: 3, sun: 1.65, rim: 0.4, hero: 0, victim: 0 }
+            : p.beat.swapped
+              ? { hemi: 1.5, sun: 0.9, rim: 1.2, hero: 7, victim: 0 }
+              : p.beat.phase === "ascend"
+                ? { hemi: 0.75, sun: 0.35, rim: 0.8, hero: 9, victim: 0 }
+                : { hemi: 1.3, sun: 0.7, rim: 0.6, hero: 4, victim: 0 }
+          : p.beat.phase === "out"
+            ? { hemi: 3, sun: 1.65, rim: 0.4, hero: 0, victim: 0 }
+            : p.beat.slain
+              ? { hemi: 0.6, sun: 0.3, rim: 0.3, hero: 3, victim: 10 }
+              : p.beat.phase === "strobe"
+                ? { hemi: 0.45, sun: 0.2, rim: 0.9, hero: 2, victim: 8 }
+                : { hemi: 1.1, sun: 0.55, rim: 0.7, hero: 4, victim: 5 };
+      const follow = 1 - Math.exp(-dt * 5);
+      for (const key of Object.keys(lights) as (keyof typeof lights)[])
+        lights[key] += (want[key] - lights[key]) * follow;
+      hemi.intensity = lights.hemi;
+      light.intensity = lights.sun;
+      rim.intensity = lights.rim;
+      heroLight.intensity = lights.hero;
+      victimLight.intensity =
+        lights.victim *
+        (p.beat.phase === "strobe" && !p.beat.slain
+          ? 0.75 + 0.25 * Math.sin(now * 0.012)
+          : 1);
+      if (p.show) {
+        heroLight.color.setHex(
+          p.show.kind === "checkmate"
+            ? 0xffe2b8
+            : p.show.by === "b"
+              ? 0xffd27a
+              : 0x9fd4ff,
+        );
+        heroLight.position.copy(squarePosition(p.show.square)).setY(0.9);
+        if (p.show.victim)
+          victimLight.position.copy(squarePosition(p.show.victim)).setY(0.75);
+      }
+      element.dataset.lights = lights.hero > 0.5 ? "stage" : "room";
       scene.updateMatrixWorld(true);
       halves.forEach((h) =>
         h.plane.copy(h.local).applyMatrix4(h.group.matrixWorld),

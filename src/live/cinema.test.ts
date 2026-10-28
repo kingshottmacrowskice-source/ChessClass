@@ -1,32 +1,31 @@
 import { describe, it, expect } from "vitest";
-import {
-  CINEMA_CHANCE,
-  cinemaRoll,
-  closeUpZoom,
-  faceOff,
-  script,
-  shotMs,
-} from "./cinema";
+import { script, shotMs } from "./cinema";
+import { dollyFor, HOME } from "./camera";
 
 describe("board-camera finishers", () => {
-  it("replaces the video half of the time", () => {
-    expect(CINEMA_CHANCE).toBe(0.5);
-    expect(cinemaRoll(() => 0.49)).toBe(true);
-    expect(cinemaRoll(() => 0.5)).toBe(false);
-  });
-  it("promotion swaps the piece before the camera settles", () => {
+  it("promotion rises, holds its breath, then swaps before the camera settles", () => {
     const cues = script("promotion").map((s) => s.cue);
-    expect(cues.indexOf("zoom")).toBeLessThan(cues.indexOf("float"));
-    expect(cues.indexOf("float")).toBeLessThan(cues.indexOf("swap"));
-    expect(cues.at(-1)).toBe("settle");
-  });
-  it("checkmate confronts, strobes, then cuts the king down", () => {
-    const steps = script("checkmate");
-    const order = ["face", "clash", "strobe", "slash", "shatter", "settle"].map(
-      (c) => steps.findIndex((s) => s.cue === c),
+    const order = ["approach", "crane", "rise", "inhale", "swap", "settle"].map(
+      (c) => cues.indexOf(c as never),
     );
+    expect(order).toEqual([0, 1, 2, 3, 4, 5]);
+    expect(script("promotion").find((s) => s.cue === "swap")!.phase).toBe(
+      "reveal",
+    );
+  });
+  it("checkmate stalks, confronts, dreads, then cuts the king down", () => {
+    const steps = script("checkmate");
+    const order = [
+      "stalk",
+      "face",
+      "dread",
+      "slash",
+      "aftermath",
+      "settle",
+    ].map((c) => steps.findIndex((s) => s.cue === c));
+    expect(order.every((i) => i >= 0)).toBe(true);
     expect(order).toEqual([...order].sort((a, b) => a - b));
-    expect(steps.find((s) => s.cue === "strobe")!.phase).toBe("strobe");
+    expect(steps.find((s) => s.cue === "dread")!.phase).toBe("strobe");
     expect(steps.find((s) => s.cue === "slash")!.phase).toBe("kill");
   });
   it("both shots stay short enough for a live stream", () => {
@@ -35,22 +34,12 @@ describe("board-camera finishers", () => {
       expect(shotMs(k)).toBeLessThan(6000);
     }
   });
-  it("zooms in on a lone piece without overshooting", () => {
-    const view = { w: 1280, h: 800 };
-    expect(closeUpZoom(70, view)).toBeGreaterThan(2);
-    expect(closeUpZoom(70, view)).toBeLessThanOrEqual(4.2);
-    expect(closeUpZoom(400, view)).toBe(1.8);
-  });
-  it("frames a face-off between both pieces, levelled but never rolled past 14°", () => {
-    const view = { w: 1280, h: 800 };
-    const flat = faceOff({ x: 100, y: 300 }, { x: 400, y: 300 }, 70, view);
-    expect(flat).toMatchObject({ x: 250, y: 300 });
-    expect(Math.abs(flat.rot)).toBe(0);
-    const steep = faceOff({ x: 100, y: 100 }, { x: 160, y: 400 }, 70, view);
-    expect(Math.abs(steep.rot)).toBe(14);
-    const near = faceOff({ x: 100, y: 300 }, { x: 170, y: 300 }, 70, view);
-    expect(near.scale).toBeGreaterThan(flat.scale);
-    // Fits both pieces with room to spare.
-    expect(300 * flat.scale).toBeLessThan(view.w * 0.6);
+  it("a dolly zoom keeps the subject the same size through any lens", () => {
+    const start = { ...HOME, distance: 5, fov: 20 };
+    const wide = dollyFor(start, 52);
+    expect(wide).toBeLessThan(start.distance);
+    const size = (d: number, fov: number) =>
+      d * Math.tan((fov * Math.PI) / 360);
+    expect(size(wide, 52)).toBeCloseTo(size(start.distance, start.fov), 6);
   });
 });

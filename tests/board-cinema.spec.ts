@@ -45,7 +45,7 @@ test.beforeEach(async ({ page }) => {
 test("promotion lowers and orbits a real camera, then restores the overview", async ({
   page,
 }) => {
-  const samples = await film(page, "预览升变运镜", 2600);
+  const samples = await film(page, "预览升变运镜", 3600);
   await page.screenshot({ path: "test-results/3d-promotion.png" });
   expect(Math.min(...samples.map((s) => s.elevation))).toBeLessThan(0.2);
   expect(Math.max(...samples.map((s) => Math.abs(s.azimuth)))).toBeGreaterThan(
@@ -66,7 +66,7 @@ test("promotion lowers and orbits a real camera, then restores the overview", as
 test("checkmate uses a low side view and restores its cast", async ({
   page,
 }) => {
-  const samples = await film(page, "预览将死运镜", 3800);
+  const samples = await film(page, "预览将死运镜", 4600);
   await page.screenshot({ path: "test-results/3d-checkmate.png" });
   expect(samples.map((s) => s.phase)).toEqual(
     expect.arrayContaining(["confront", "strobe", "kill"]),

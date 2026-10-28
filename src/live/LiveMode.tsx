@@ -1,9 +1,4 @@
-import {
-  useEffect,
-  useRef,
-  useState,
-  type CSSProperties,
-} from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { Chess, DEFAULT_POSITION } from "chess.js";
 import { Engine, type Analysis } from "../core/engine";
 import { playUci } from "../core/game";
@@ -17,8 +12,8 @@ import BoardVotes from "./BoardVotes";
 import Actor, { type Emote } from "./Actor";
 import FxLayer, { pieceColors, type FxApi } from "./fx";
 import Ultimate, { type UltimateKind, type UltimateShow } from "./Ultimate";
-import { CameraRig, mountCamera } from "./camera";
-import { cinemaRoll, type Beat, type CinemaShow } from "./cinema";
+import { boardViews, CameraRig, mountCamera } from "./camera";
+import type { Beat, CinemaShow } from "./cinema";
 import { CinemaFrame } from "./CinemaFrame";
 import { CinemaShot } from "./cinemaShot";
 import "./cinema.css";
@@ -686,8 +681,9 @@ export default function LiveMode({ exit }: { exit: () => void }) {
     return ok;
   };
   /**
-   * Queue a finisher. Given the pieces involved (`cast`), it is shot on the
-   * board with the camera half the time; otherwise it plays the video/cut-in.
+   * Queue a finisher. Given the pieces involved (`cast`), it is shot on the 3D
+   * board with the camera; without a cast, or without WebGL, it plays the
+   * video/cut-in.
    */
   const special = (
     kind: UltimateKind,
@@ -697,8 +693,9 @@ export default function LiveMode({ exit }: { exit: () => void }) {
     forceCinema?: boolean,
   ) => {
     const list = videos.current[kind] || [];
+    const stage = projectionRef.current;
     const cinema =
-      cast && (forceCinema ?? cinemaRoll())
+      cast && (forceCinema || (stage && boardViews.has(stage)))
         ? { ...cast, kind, by, detail }
         : undefined;
     const show: UltimateShow = {

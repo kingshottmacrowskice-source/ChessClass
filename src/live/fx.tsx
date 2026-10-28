@@ -7,7 +7,7 @@ import {
   type RefObject,
 } from "react";
 import ChessPiece from "./ChessPiece";
-import { boardViews } from "./camera";
+import { activeCamera, boardViews } from "./camera";
 import { squarePoint, SQUARE, type Path, type Sample } from "./choreography";
 import type { Point } from "./motion";
 
@@ -37,6 +37,8 @@ export type FxApi = {
   tracer(from: At, to: At): void;
   reticle(square: string, tone: Tone, ms?: number): void;
   flash(color?: string, ms?: number): void;
+  /** Drop particles, text and marks; flying pieces carry on. */
+  clearEffects(): void;
   shake(power: number): void;
   clear(): void;
 };
@@ -161,16 +163,14 @@ const FxLayer = forwardRef<
       );
       setShown([...flights.current]);
       if (shakeTarget.current)
-        boardViews
-          .get(shakeTarget.current)
-          ?.flights(
-            flights.current.map((f) => ({
-              id: f.id,
-              piece: f.piece,
-              color: f.color,
-              s: { ...f.s },
-            })),
-          );
+        boardViews.get(shakeTarget.current)?.flights(
+          flights.current.map((f) => ({
+            id: f.id,
+            piece: f.piece,
+            color: f.color,
+            s: { ...f.s },
+          })),
+        );
     }
     if (c) {
       const parent = c.parentElement!;
@@ -305,16 +305,14 @@ const FxLayer = forwardRef<
         flights.current.push(f);
         setShown([...flights.current]);
         if (shakeTarget.current)
-          boardViews
-            .get(shakeTarget.current)
-            ?.flights(
-              flights.current.map((f) => ({
-                id: f.id,
-                piece: f.piece,
-                color: f.color,
-                s: { ...f.s },
-              })),
-            );
+          boardViews.get(shakeTarget.current)?.flights(
+            flights.current.map((f) => ({
+              id: f.id,
+              piece: f.piece,
+              color: f.color,
+              s: { ...f.s },
+            })),
+          );
         run();
       });
     },
@@ -483,6 +481,9 @@ const FxLayer = forwardRef<
     shake(power) {
       const el = shakeTarget.current;
       if (!el || reduced() || !el.animate) return;
+      // While filming, the lens takes the hit instead of the whole frame.
+      const cam = activeCamera();
+      if (cam?.active) return cam.shake(power);
       // A decaying rumble: alternating side-to-side jolts with a little roll,
       // so a heavy hit reads as the board itself shuddering.
       const amp = 3 + power * 10;
@@ -499,6 +500,11 @@ const FxLayer = forwardRef<
       });
       frames[10] = { transform: "translate(0px, 0px) rotate(0deg)" };
       el.animate(frames, { duration: 260 + power * 200, easing: "linear" });
+    },
+    clearEffects() {
+      effects.current = [];
+      // One more frame wipes what is already painted.
+      run();
     },
     clear() {
       effects.current = [];
