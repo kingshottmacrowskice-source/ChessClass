@@ -62,6 +62,10 @@ export default function LiveSettings() {
   }, [settings.room, settings.autoConnect]);
   const voiceRef = useRef(new Voice(settings.voiceConfig));
   voiceRef.current.config = settings.voiceConfig;
+  useEffect(() => () => voiceRef.current.cancel(), []);
+  useEffect(() => {
+    voiceRef.current.cancel();
+  }, [settings.voiceConfig.enabled, settings.voiceConfig.provider]);
 
   const set = (patch: Partial<LiveSettings>) => update(patch);
 
@@ -294,11 +298,17 @@ export default function LiveSettings() {
                 voiceConfig: {
                   ...settings.voiceConfig,
                   provider,
-                  voice: provider === "openai" ? "alloy" : "longxiaochun",
+                  voice:
+                    provider === "coeiroink"
+                      ? "auto"
+                      : provider === "openai"
+                        ? "alloy"
+                        : "longxiaochun",
                 },
               });
             }}
           >
+            <option value="coeiroink">COEIROINK（日语配音 / 中文显示）</option>
             <option value="browser">浏览器语音（无需配置）</option>
             <option value="cosyvoice">CosyVoice（阿里云，最自然）</option>
             <option value="openai">OpenAI 兼容 TTS</option>
@@ -320,25 +330,27 @@ export default function LiveSettings() {
                   })
                 }
               >
-                {(settings.voiceConfig.provider === "cosyvoice"
-                  ? [
-                      ["longxiaochun", "龙小淳 · 活泼少女"],
-                      ["longxiaoxia", "龙小夏 · 温柔"],
-                      ["longwan", "龙婉 · 温柔"],
-                      ["longjing", "龙静 · 知性"],
-                      ["longshu", "龙淑 · 温柔"],
-                      ["longfei", "龙飞 · 男声"],
-                      ["longxun", "龙勋 · 男声"],
-                      ["longzheng", "龙铮 · 男声"],
-                    ]
-                  : [
-                      ["alloy", "alloy"],
-                      ["echo", "echo"],
-                      ["fable", "fable"],
-                      ["onyx", "onyx"],
-                      ["nova", "nova"],
-                      ["shimmer", "shimmer"],
-                    ]
+                {(settings.voiceConfig.provider === "coeiroink"
+                  ? [["auto", "本机首个可用音色"]]
+                  : settings.voiceConfig.provider === "cosyvoice"
+                    ? [
+                        ["longxiaochun", "龙小淳 · 活泼少女"],
+                        ["longxiaoxia", "龙小夏 · 温柔"],
+                        ["longwan", "龙婉 · 温柔"],
+                        ["longjing", "龙静 · 知性"],
+                        ["longshu", "龙淑 · 温柔"],
+                        ["longfei", "龙飞 · 男声"],
+                        ["longxun", "龙勋 · 男声"],
+                        ["longzheng", "龙铮 · 男声"],
+                      ]
+                    : [
+                        ["alloy", "alloy"],
+                        ["echo", "echo"],
+                        ["fable", "fable"],
+                        ["onyx", "onyx"],
+                        ["nova", "nova"],
+                        ["shimmer", "shimmer"],
+                      ]
                 ).map(([value, label]) => (
                   <option key={value} value={value}>
                     {label}
@@ -347,9 +359,11 @@ export default function LiveSettings() {
               </select>
             </label>
             <small>
-              {settings.voiceConfig.provider === "cosyvoice"
-                ? "需在 server/models.local.json 填写 cosyvoice.apiKey（阿里云 DashScope 密钥）。"
-                : "需在 server/models.local.json 填写 tts.apiKey。"}
+              {settings.voiceConfig.provider === "coeiroink"
+                ? "保持 COEIROINK 启动。AI 将中文转为日语并自动选择配音风格后合成，使用当前聊天模型和 DeepSeek 密钥，会增加一次模型请求及等待时间。"
+                : settings.voiceConfig.provider === "cosyvoice"
+                  ? "需在 server/models.local.json 填写 cosyvoice.apiKey（阿里云 DashScope 密钥）。"
+                  : "需在 server/models.local.json 填写 tts.apiKey。"}
             </small>
           </>
         )}
@@ -386,7 +400,10 @@ export default function LiveSettings() {
           onClick={() =>
             void voiceRef.current
               .speak("你好呀，我是大肥鱼，会下棋也会聊天。", true)
-              .catch(() => {})
+              .catch((error) => {
+                if (error?.name !== "AbortError")
+                  window.alert(String(error.message || error));
+              })
           }
         >
           试听

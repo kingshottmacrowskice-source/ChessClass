@@ -1,8 +1,9 @@
+import { readModelConfig } from "./core";
 export type VoiceConfig = {
   enabled: boolean;
   rate: number;
   pitch: number;
-  provider: "browser" | "openai" | "cosyvoice";
+  provider: "browser" | "openai" | "cosyvoice" | "coeiroink";
   voice: string;
 };
 
@@ -25,7 +26,7 @@ export function readVoiceConfig(): VoiceConfig {
       c[k] = Number.isFinite(c[k])
         ? Math.max(min, Math.min(max, c[k]))
         : voiceDefaults[k];
-    if (!["browser", "openai", "cosyvoice"].includes(c.provider))
+    if (!["browser", "openai", "cosyvoice", "coeiroink"].includes(c.provider))
       c.provider = voiceDefaults.provider;
     return c;
   } catch {
@@ -39,7 +40,11 @@ export function readVoiceConfig(): VoiceConfig {
  *  - `cosyvoice`：阿里云 DashScope CosyVoice（Coopanion 同款神经 TTS），声音最自然，需密钥。
  *  - `openai`：任意 OpenAI 兼容 /v1/audio/speech 接口。
  */
+export type SpeechOptions = { japanese?: string; onStart?: () => void };
 export class Voice {
+  private controller?: AbortController;
+  private audio?: HTMLAudioElement;
+  private finishPlayback?: () => void;
   constructor(public config: VoiceConfig = readVoiceConfig()) {
     // Warm the voice list so a good Chinese voice is available on first speak.
     try {
@@ -93,6 +98,11 @@ export class Voice {
   }
 
   cancel() {
+    this.controller?.abort();
+    this.audio?.pause();
+    this.finishPlayback?.();
+    this.audio = undefined;
+    this.finishPlayback = undefined;
     try {
       window.speechSynthesis?.cancel();
     } catch {
@@ -100,18 +110,21 @@ export class Voice {
     }
   }
 
-  async speak(text: string, force = false) {
+  async speak(text: string, force = false, options: SpeechOptions = {}) {
     if ((!this.config.enabled && !force) || !text.trim()) return;
-    if (this.config.provider === "openai") return this.speakRemote("openai", text);
+    if (this.config.provider === "coeiroink")
+      return this.speakRemote("coeiroink", text, options);
+    if (this.config.provider === "openai")
+      return this.speakRemote("openai", text, options);
     if (this.config.provider === "cosyvoice")
-      return this.speakRemote("cosyvoice", text);
-    this.speakBrowser(text);
+      return this.speakRemote("cosyvoice", text, options);
+    return this.speakBrowser(text, options);
   }
 
-  speakBrowser(text: string) {
+  speakBrowser(text: string, options: SpeechOptions = {}) {
     const synth = window.speechSynthesis;
     if (!synth) return;
-    synth.cancel();
+    this.cancel();
     const u = new SpeechSynthesisUtterance(text);
     u.rate = this.config.rate;
     u.pitch = this.config.pitch;
@@ -124,22 +137,60 @@ export class Voice {
     } else {
       u.lang = "zh-CN";
     }
-    synth.speak(u);
+    return new Promise<void>((resolve, reject) => {
+      this.finishPlayback = resolve;
+      u.onstart = () => options.onStart?.();
+      u.onend = () => resolve();
+      u.onerror = () => reject(new Error("语音播放失败"));
+      synth.speak(u);
+    });
   }
 
   /** 服务端合成并回传音频；provider 决定走 OpenAI 兼容还是 CosyVoice。 */
-  async speakRemote(provider: "openai" | "cosyvoice", text: string) {
+  async speakRemote(
+    provider: "openai" | "cosyvoice" | "coeiroink",
+    text: string,
+    options: SpeechOptions = {},
+  ) {
+    this.cancel();
+    const controller = new AbortController();
+    this.controller = controller;
     const r = await fetch("/api/audio-speech", {
+      signal: controller.signal,
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         provider,
+        japanese: options.japanese,
+        translationModel: readModelConfig().chatModel,
         voice: this.config.voice,
         input: text,
         rate: this.config.rate,
         pitch: this.config.pitch,
       }),
     });
+    if (!r.ok && provider === "coeiroink") {
+      const result = await r.json().catch(() => ({}));
+      const code = result.error?.code || "COEIROINK_UNAVAILABLE";
+      const messages: Record<string, string> = {
+        TRANSLATION_KEY_MISSING: "缺少日语翻译所需的 DeepSeek 密钥",
+        TRANSLATION_FAILED: "日语翻译服务请求失败",
+        TRANSLATION_INVALID: "日语翻译未返回完整文本",
+        COEIROINK_ENGINE_UNAVAILABLE: "无法连接 COEIROINK 引擎",
+        COEIROINK_NO_VOICE: "COEIROINK 没有可用音色",
+        COEIROINK_SYNTHESIS_FAILED: "COEIROINK 音频合成失败",
+        VOICE_TIMEOUT: "语音请求超过 120 秒",
+      };
+      throw new Error(
+        "日语配音失败：" +
+          (messages[code] || "语音服务不可用") +
+          "（" +
+          r.status +
+          " / " +
+          code +
+          "）",
+      );
+    }
     if (!r.ok)
       throw new Error(
         `语音合成失败 (${r.status})，请在 server/models.local.json 配置 ${
@@ -147,16 +198,26 @@ export class Voice {
         } 服务。`,
       );
     const blob = await r.blob();
+    if (controller.signal.aborted) return;
     const url = URL.createObjectURL(blob);
     try {
       await new Promise<void>((resolve, reject) => {
         const audio = new Audio(url);
+        this.audio = audio;
+        this.finishPlayback = resolve;
+        audio.onplaying = () => {
+          options.onStart?.();
+        };
         audio.onended = () => resolve();
         audio.onerror = () => reject(new Error("音频播放失败"));
         void audio.play().catch(reject);
       });
     } finally {
       URL.revokeObjectURL(url);
+      if (this.controller === controller) {
+        this.audio = undefined;
+        this.finishPlayback = undefined;
+      }
     }
   }
 }

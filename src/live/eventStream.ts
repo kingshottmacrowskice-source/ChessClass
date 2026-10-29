@@ -30,6 +30,7 @@ export type EventBatch = {
 export class LiveEventStream {
   private events: LiveEvent[] = [];
   private sequence = 0;
+  private evictedThrough = 0;
   constructor(private capacity = 300) {}
   append(
     kind: LiveEventKind,
@@ -37,6 +38,9 @@ export class LiveEventStream {
     at = Date.now(),
     historical = false,
   ) {
+    // Analysis is a current snapshot, shared by both sides, not a move log.
+    if (kind === "analysis")
+      this.events = this.events.filter((e) => e.kind !== "analysis");
     this.events.push({
       id: ++this.sequence,
       at,
@@ -44,7 +48,8 @@ export class LiveEventStream {
       data,
       ...(historical ? { historical: true } : {}),
     });
-    if (this.events.length > this.capacity) this.events.shift();
+    if (this.events.length > this.capacity)
+      this.evictedThrough = this.events.shift()!.id;
   }
   read(after: number): EventBatch {
     const unseen = this.events.filter((e) => e.id > after);
@@ -55,7 +60,7 @@ export class LiveEventStream {
         .filter((e) => e.id <= after || e.historical)
         .slice(-40),
       cursor: this.sequence,
-      dropped: Math.max(0, (unseen[0]?.id ?? this.sequence + 1) - after - 1),
+      dropped: Math.max(0, this.evictedThrough - after),
     };
   }
   recordSpeech(text: string, source: "local" | "ai", reason?: string) {
@@ -64,5 +69,6 @@ export class LiveEventStream {
   clear() {
     this.events = [];
     this.sequence = 0;
+    this.evictedThrough = 0;
   }
 }

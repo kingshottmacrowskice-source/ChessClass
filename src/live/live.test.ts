@@ -35,8 +35,8 @@ describe("live votes", () => {
     r.add("b", "e2e4", 300);
     expect(r.add("b", SURRENDER, 400)).toBe(false);
     expect(r.tally()).toEqual([
-      [SURRENDER, 1],
       ["e2e4", 1],
+      [SURRENDER, 1],
     ]);
   });
   it("waits one minute for surrender and does not reset on supporting votes", () => {
@@ -47,16 +47,16 @@ describe("live votes", () => {
     expect(r.winner(60099)).toBeUndefined();
     expect(r.winner(60100)).toBe(SURRENDER);
   });
-  it("uses ten seconds when a move overtakes surrender, preserving tie order", () => {
+  it("prefers a tied move over surrender and uses ten seconds", () => {
     const r = new VoteRound();
     r.add("a", SURRENDER, 100);
     r.add("b", "e2e4", 20000);
-    expect(r.deadline()).toBe(80000);
-    expect(r.tally()[0][0]).toBe(SURRENDER);
+    expect(r.deadline()).toBe(30000);
+    expect(r.tally()[0][0]).toBe("e2e4");
     r.add("c", "e2e4", 25000);
-    expect(r.deadline()).toBe(35000);
-    r.add("d", "e2e4", 34000);
-    expect(r.winner(35000)).toBe("e2e4");
+    expect(r.deadline()).toBe(30000);
+    r.add("d", "e2e4", 29000);
+    expect(r.winner(30000)).toBe("e2e4");
   });
   it("switches to a minute when surrender overtakes a move", () => {
     const r = new VoteRound();

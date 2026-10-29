@@ -99,7 +99,10 @@ export class VoteRound {
     const counts = new Map<string, number>();
     for (const m of this.votes.values())
       counts.set(m, (counts.get(m) || 0) + 1);
-    return [...counts].sort((a, b) => b[1] - a[1]);
+    return [...counts].sort(
+      (a, b) =>
+        b[1] - a[1] || Number(a[0] === SURRENDER) - Number(b[0] === SURRENDER),
+    );
   }
   winner(now: number) {
     return now >= this.deadline() ? this.tally()[0]?.[0] : undefined;

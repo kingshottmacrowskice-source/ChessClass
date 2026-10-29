@@ -1,3 +1,5 @@
+import { cachedLocalVoice } from "./local-voice-cache.mjs";
+import { synthesizeJapanese } from "./coeiroink.mjs";
 import { readFileSync } from "node:fs";
 
 const providers = {
@@ -201,6 +203,61 @@ export function audioMiddleware(configPath, fetcher = fetch) {
     } catch {
       return send(400, "INVALID_AUDIO_REQUEST");
     }
+    if (body.provider === "coeiroink") {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 120000);
+      const cancel = () => {
+        if (!res.writableEnded) controller.abort();
+      };
+      res.on("close", cancel);
+      try {
+        const cached = await cachedLocalVoice(body);
+        if (cached) {
+          res.writeHead(200, {
+            "Content-Type": "audio/wav",
+            "Cache-Control": "no-store",
+          });
+          res.end(cached);
+          return;
+        }
+        const config = body.japanese
+          ? {}
+          : JSON.parse(readFileSync(configPath, "utf8").replace(/^\uFEFF/, ""));
+        const audio = await synthesizeJapanese(
+          body,
+          config,
+          fetcher,
+          controller.signal,
+        );
+        if (res.destroyed) return;
+        res.writeHead(200, {
+          "Content-Type": "audio/wav",
+          "Cache-Control": "no-store",
+        });
+        res.end(Buffer.from(await audio.arrayBuffer()));
+      } catch (error) {
+        if (!res.destroyed)
+          send(
+            controller.signal.aborted ? 504 : 502,
+            controller.signal.aborted
+              ? "VOICE_TIMEOUT"
+              : [
+                    "TRANSLATION_KEY_MISSING",
+                    "COEIROINK_ENGINE_UNAVAILABLE",
+                    "COEIROINK_NO_VOICE",
+                    "TRANSLATION_FAILED",
+                    "TRANSLATION_INVALID",
+                    "COEIROINK_SYNTHESIS_FAILED",
+                  ].includes(error.code)
+                ? error.code
+                : "COEIROINK_UNAVAILABLE",
+          );
+      } finally {
+        clearTimeout(timer);
+        res.off("close", cancel);
+      }
+      return;
+    }
     const provider = body.provider === "cosyvoice" ? "cosyvoice" : "openai";
     const clamp = (n, lo, hi) =>
       Number.isFinite(n) ? Math.max(lo, Math.min(hi, n)) : 1;
@@ -308,8 +365,7 @@ export function audioMiddleware(configPath, fetcher = fetch) {
         redirect: "error",
       });
       if (!remote.ok) return send(remote.status, "AUDIO_UPSTREAM_ERROR");
-      const contentType =
-        remote.headers.get("content-type") || "audio/mpeg";
+      const contentType = remote.headers.get("content-type") || "audio/mpeg";
       res.writeHead(200, {
         "Content-Type": contentType,
         "Cache-Control": "no-store",

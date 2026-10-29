@@ -178,45 +178,80 @@ export default function ThreeBoard(props: Props) {
           0.995,
           0.08,
           0.995,
-          (row + col) % 2 ? 0x536958 : 0xd8c4a0,
+          (row + col) % 2 ? 0x304c43 : 0xf0dfb8,
           -0.04,
         );
         m.position.x = col - 3.5;
         m.position.z = row - 3.5;
         tiles.push(m);
       }
-    // Engraved-looking rank/file labels sit on the frame in world space.
+    // Labels sit just above the surface, with opposite ink on light/dark tiles.
     const textures: T.Texture[] = [];
-    for (let i = 0; i < 8; i++)
-      for (const edge of [0, 1]) {
-        const c = document.createElement("canvas");
-        c.width = 128;
-        c.height = 128;
-        const ctx = c.getContext("2d")!;
-        ctx.fillStyle = "#ead4a9";
-        ctx.font = "bold 84px serif";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText(
-          edge ? String(8 - i) : String.fromCharCode(97 + i),
-          64,
-          64,
+    const label = (
+      text: string,
+      x: number,
+      z: number,
+      width: number,
+      height: number,
+      ink: string,
+      outline: string,
+    ) => {
+      const c = document.createElement("canvas");
+      c.width = 256;
+      c.height = 128;
+      const ctx = c.getContext("2d")!;
+      ctx.font = "900 92px Arial, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.lineJoin = "round";
+      ctx.strokeStyle = outline;
+      ctx.lineWidth = 7;
+      ctx.strokeText(text, 128, 66);
+      ctx.fillStyle = ink;
+      ctx.fillText(text, 128, 66);
+      const texture = new T.CanvasTexture(c);
+      texture.colorSpace = T.SRGBColorSpace;
+      texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+      textures.push(texture);
+      const m = new T.Mesh(
+        new T.PlaneGeometry(width, height),
+        new T.MeshBasicMaterial({
+          map: texture,
+          toneMapped: false,
+          transparent: true,
+          depthWrite: false,
+        }),
+      );
+      m.rotation.x = -Math.PI / 2;
+      m.position.set(x, 0.012, z);
+      scene.add(m);
+    };
+    for (let i = 0; i < 8; i++) {
+      label(
+        String.fromCharCode(97 + i),
+        i - 3.5,
+        4.18,
+        0.46,
+        0.3,
+        "#152c25",
+        "#fff3d6",
+      );
+      label(String(8 - i), -4.18, i - 3.5, 0.46, 0.3, "#152c25", "#fff3d6");
+    }
+    for (let row = 0; row < 8; row++) {
+      for (let col = 0; col < 8; col++) {
+        const dark = (row + col) % 2 === 1;
+        label(
+          `${String.fromCharCode(97 + col)}${8 - row}`,
+          col - 3.5 - 0.28,
+          row - 3.5 - 0.34,
+          0.38,
+          0.19,
+          dark ? "#fff3d6" : "#152c25",
+          dark ? "#152c25" : "#fff3d6",
         );
-        const texture = new T.CanvasTexture(c);
-        textures.push(texture);
-        const m = new T.Mesh(
-          new T.PlaneGeometry(0.22, 0.22),
-          new T.MeshBasicMaterial({
-            map: texture,
-            toneMapped: false,
-            transparent: true,
-            depthWrite: false,
-          }),
-        );
-        m.rotation.x = -Math.PI / 2;
-        m.position.set(edge ? -4.18 : i - 3.5, 0.005, edge ? i - 3.5 : 4.18);
-        scene.add(m);
       }
+    }
     const actorTexture = new T.CanvasTexture(document.createElement("canvas"));
     actorTexture.colorSpace = T.SRGBColorSpace;
     const actorSprite = new T.Sprite(

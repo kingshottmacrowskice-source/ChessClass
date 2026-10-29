@@ -119,5 +119,14 @@ export function useSpeechBubble(initial: string) {
     streaming.current = false;
     commit([]);
   };
-  return { bubbles, say, beginStream, streamText, endStream, clear };
+  return {
+    bubbles,
+    say,
+    beginStream,
+    streamText,
+    endStream,
+    clear,
+    hold: push,
+    dismiss,
+  };
 }

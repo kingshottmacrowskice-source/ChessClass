@@ -159,9 +159,19 @@ test("surrender shares the round and resolves after a minute without leader exte
 }) => {
   await page.route("**/api/live/settings", (route) =>
     route.fulfill({
-      json: { settings: { ai: false, autoConnect: false } },
+      json: { settings: { ai: true, autoConnect: false } },
     }),
   );
+  await page.route("**/api/model-chat", (route) => {
+    const body = route.request().postDataJSON();
+    const payload = JSON.parse(body.messages[1].content);
+    const choices = (payload.messages ?? [])
+      .filter((m: { text: string }) => m.text === "投降")
+      .map((m: { id: string }) => ({ id: m.id, move: "surrender" }));
+    return route.fulfill({
+      json: { choices: [{ message: { content: JSON.stringify(choices) } }] },
+    });
+  });
   const start = new Date("2026-01-01T00:00:00Z");
   await page.clock.install({ time: start });
   await page.goto("/#live");
@@ -171,14 +181,22 @@ test("surrender shares the round and resolves after a minute without leader exte
     await page.getByLabel("测试观众").fill(user);
     await page.getByLabel("测试弹幕").fill(text);
     await page.getByRole("button", { name: "发送", exact: true }).click();
+    if (text.includes("投降")) {
+      await page.clock.fastForward(1500);
+      await expect(page.locator(".chat-feedback").last()).not.toContainText(
+        "正在识别",
+      );
+    }
   };
+  await vote("否定观众", "不要投降");
+  await expect(page.locator(".vote-clock")).toHaveText("等待第一票");
   await vote("观众甲", "投降");
   await expect(page.locator(".vote-clock")).toContainText("60 秒后投降重开");
   await vote("观众甲", "e4");
   await expect(page.locator(".chat-feedback").last()).toContainText(
     "本轮已投 投降，不能重复投票",
   );
-  await page.clock.fastForward(50000);
+  await page.clock.fastForward(48500);
   await vote("观众乙", "投降");
   await expect(page.locator(".vote-clock")).toContainText("10 秒后投降重开");
   await expect(page.locator(".board-vote")).toHaveCount(0);
