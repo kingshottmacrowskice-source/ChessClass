@@ -83,21 +83,18 @@ test("action studio loads every clip, supports stepping and timed speech", async
     fullPage: true,
   });
 });
-test("live initial speech expires and preview opens separately", async ({
+test("live has no immediate welcome and preview opens separately", async ({
   page,
 }) => {
   await page.goto("/#live");
-  await expect(page.locator(".sprite-bubble")).toBeVisible();
-  await expect(page.locator(".sprite-bubble")).toHaveCount(0, {
-    timeout: 15000,
-  });
+  await expect(page.locator(".sprite-bubble")).toHaveCount(0);
   await expect(page.getByRole("link", { name: "动作预览 ↗" })).toHaveAttribute(
     "target",
     "_blank",
   );
 });
 
-test("streaming speech remains until completion then expires", async ({
+test("scheduled chat displays only the completed reply then expires", async ({
   page,
 }) => {
   await page.addInitScript(() => {
@@ -135,17 +132,14 @@ test("streaming speech remains until completion then expires", async ({
   });
   await page.goto("/#live-settings");
   await page
-    .getByRole("checkbox", { name: "启用廉价 AI 识别与流式聊天" })
+    .getByRole("checkbox", { name: "启用 AI 走法识别与定时聊天" })
     .check();
   await page.goto("/#live");
   await page.getByLabel("测试弹幕").fill("你好");
   await page.getByRole("button", { name: "发送", exact: true }).click();
-  await expect(page.locator(".sprite-bubble").last()).toHaveText("嗯", {
-    timeout: 16000,
+  await expect(page.locator(".sprite-bubble").last()).toHaveText("嗯，好。", {
+    timeout: 22000,
   });
-  await page.waitForTimeout(2800);
-  await expect(page.locator(".sprite-bubble").last()).toHaveText("嗯");
-  await expect(page.locator(".sprite-bubble").last()).toHaveText("嗯，好。");
   await expect(page.locator(".sprite-bubble")).toHaveCount(0, {
     timeout: 5000,
   });

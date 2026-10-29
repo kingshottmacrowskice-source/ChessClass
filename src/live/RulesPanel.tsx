@@ -101,8 +101,12 @@ export default function RulesPanel({ lastSan }: { lastSan?: string }) {
           弹幕说出想走的棋就行：<code>e4</code>、<code>马跳f3</code>、
           <code>王前兵走两格</code>都能听懂。
         </li>
-        <li>每人每轮一票。棋盘上的箭头就是票数，红色★领先。</li>
-        <li>10 秒内没有新票就落子，最长等 5 分钟。</li>
+        <li>每人每轮一票，走法和投降共用票数。发“投降”可参与投降表决。</li>
+        <li>最高票决定结果：走法等 10 秒，投降等 1 分钟，整轮最长 5 分钟。</li>
+        <li>
+          给当前领先项加票不重置倒计时；投其他项会重置。平票先获票者优先。
+        </li>
+        <li>棋盘箭头显示走法票数，红色★表示当前领先。</li>
       </ul>
       <p className="notation-live" aria-live="polite">
         {lastSan ? (

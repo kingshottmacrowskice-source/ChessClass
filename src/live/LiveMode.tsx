@@ -1,8 +1,15 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { Chess, DEFAULT_POSITION } from "chess.js";
-import { Engine, type Analysis } from "../core/engine";
+import { Engine } from "../core/engine";
 import { playUci } from "../core/game";
-import { model, resolveMove, uciOf, VoteRound } from "./core";
+import {
+  model,
+  resolveMove,
+  uciOf,
+  VoteRound,
+  SURRENDER,
+  voteLabel,
+} from "./core";
 import { logLive } from "./log";
 import "./live.css";
 import "./live-fx.css";
@@ -21,12 +28,6 @@ import RulesPanel from "./RulesPanel";
 import { useBoardProjection } from "./projection";
 import { useSpeechBubble } from "./speech";
 import { clipMs, impactMs, rowOf } from "./actions";
-import {
-  commentaryEvidence,
-  commentaryPrompt,
-  localCommentary,
-  type CommentaryKind,
-} from "./commentary";
 import { useWalker, roamTarget, type Point } from "./motion";
 import { MOVE_MS, easeMove } from "./transition";
 import {
@@ -40,8 +41,8 @@ import {
   SQUARE,
   type Attack,
 } from "./choreography";
-import { ChatMemory, chatPrompt, summaryPrompt } from "./chatMemory";
-import { line, pieceName } from "./lines";
+import { LiveEventStream, type LiveEventKind } from "./eventStream";
+import { AIChat } from "./aiChat";
 import { Voice } from "./voice";
 import { useLiveSettings } from "./liveConfig";
 import { chooseEnemyMove } from "./difficulty";
@@ -117,16 +118,15 @@ export default function LiveMode({ exit }: { exit: () => void }) {
   const game = useRef(new Chess()),
     engine = useRef(new Engine()),
     round = useRef(new VoteRound()),
-    memory = useRef(new ChatMemory());
+    events = useRef(new LiveEventStream()),
+    aiChat = useRef<AIChat | null>(null);
   const [fen, setFen] = useState(game.current.fen()),
     [version, refresh] = useState(0),
     [now, setNow] = useState(Date.now());
   const [settings, updateSettings, syncStatus] = useLiveSettings();
   const connected = settings.autoConnect && /^\d{1,15}$/.test(settings.room);
   const [connection, setConnection] = useState("尚未连接");
-  const { bubbles, say, beginStream, streamText, endStream } = useSpeechBubble(
-    "欢迎来到大肥鱼的棋盘！你们执白，发 e4 或 马到f3 就能投票。",
-  );
+  const { bubbles, say, clear: clearSpeech } = useSpeechBubble("");
   const [phase, setPhase] = useState("等待观众"),
     [error, setError] = useState(""),
     [logs, setLogs] = useState<Chat[]>([]),
@@ -158,28 +158,21 @@ export default function LiveMode({ exit }: { exit: () => void }) {
     if (ms < Infinity)
       emoteTimer.current = setTimeout(() => setEmote(null), ms);
   };
-  /** Speak and remember what was said, so the model won't repeat it. */
-  const speak = (text: string, soft = false, voice = true) => {
-    if (say(text, soft)) {
-      memory.current.addSaid(text);
-      if (voice) void voiceRef.current.speak(text).catch(() => {});
-    }
-  };
-  const [lastCommentary, setLastCommentary] = useState("");
-  const narration = useRef<AbortController | null>(null),
-    narrationVersion = useRef(0),
-    narrationBusy = useRef(false);
-  const cancelNarration = () => {
-    narrationVersion.current++;
-    narration.current?.abort();
-    narration.current = null;
-    narrationBusy.current = false;
+  const [lastReply, setLastReply] = useState("");
+  const characterSpeech = (
+    text: string,
+    source: "local" | "ai",
+    reason?: string,
+  ) => {
+    if (!text.trim() || !say(text)) return;
+    events.current.recordSpeech(text, source, reason);
+    logLive({ type: "speech", kind: source, text, reason });
+    void voiceRef.current.speak(text).catch(() => {});
   };
   // When AI is turned off (e.g. from the settings page), drop pending work.
   useEffect(() => {
     if (settings.ai) return;
     queue.current = [];
-    cancelNarration();
     setLogs((items) =>
       items.map((m) =>
         m.feedback === "正在识别走法…"
@@ -188,54 +181,6 @@ export default function LiveMode({ exit }: { exit: () => void }) {
       ),
     );
   }, [settings.ai]);
-  const narrate = (a: Analysis, kind: CommentaryKind, lastMove: string) => {
-    cancelNarration();
-    const evidence = commentaryEvidence(a, lastMove, kind);
-    const fallback = localCommentary(evidence);
-    speak(fallback, false, !aiRef.current);
-    setLastCommentary(fallback);
-    if (!aiRef.current) return;
-    const c = new AbortController(),
-      revision = narrationVersion.current,
-      session = epoch.current;
-    const bubbleLease = beginStream();
-    narration.current = c;
-    narrationBusy.current = true;
-    let said = "";
-    void model(
-      commentaryPrompt(personaRef.current, kind),
-      JSON.stringify(evidence),
-      c.signal,
-      (t) => {
-        if (
-          alive.current &&
-          session === epoch.current &&
-          revision === narrationVersion.current &&
-          !c.signal.aborted
-        ) {
-          said = t;
-          streamText(bubbleLease, t);
-          setLastCommentary(t);
-        }
-      },
-      modelConfigRef.current,
-      "commentary",
-    )
-      .catch(() => {
-        /* Keep the natural local reaction when the model is unavailable. */
-      })
-      .finally(() => {
-        endStream(bubbleLease);
-        if (said.trim())
-          logLive({ type: "speech", kind: "commentary", text: said });
-        memory.current.addSaid(said);
-        if (said.trim()) void voiceRef.current.speak(said).catch(() => {});
-        if (revision === narrationVersion.current) {
-          narrationBusy.current = false;
-          narration.current = null;
-        }
-      });
-  };
   const videos = useRef<Record<string, string[]>>({});
   const ultimateQueue = useRef<UltimateShow[]>([]),
     ultimateId = useRef(0);
@@ -283,21 +228,14 @@ export default function LiveMode({ exit }: { exit: () => void }) {
     epoch = useRef(0),
     queue = useRef<Chat[]>([]),
     controllers = useRef(new Set<AbortController>()),
-    chatBusy = useRef(false),
     parseBusy = useRef(false),
-    lastReplyEnd = useRef(0),
     lastChatAt = useRef(Date.now()),
     dozing = useRef(false),
     idleToken = useRef(0),
-    welcomes = useRef<{ names: string[]; at: number }>({ names: [], at: 0 }),
     danmakuLane = useRef(0),
     aiRef = useRef(settings.ai),
     personaRef = useRef(settings.persona),
-    musicRef = useRef(new MusicPlayer()),
-    surrenderRef = useRef<{ votes: Map<string, number>; firstAt: number }>({
-      votes: new Map(),
-      firstAt: 0,
-    });
+    musicRef = useRef(new MusicPlayer());
   aiRef.current = settings.ai;
   personaRef.current = settings.persona;
   const abortable = async <T,>(fn: (s: AbortSignal) => Promise<T>) => {
@@ -328,36 +266,31 @@ export default function LiveMode({ exit }: { exit: () => void }) {
     interruptIdle();
     act("idle");
     showEmote("!", "alert");
-    speak(line("wake"), true);
+    characterSpeech("唔！我没睡！", "local", "wake");
   };
   const acceptVote = (m: Chat, move: string) => {
     const previous = round.current.votes.get(m.user);
     if (!m.user.trim()) return "缺少观众 ID，未计票";
-    if (previous) return `本轮已投 ${previous}，不能重复投票`;
+    if (previous) return `本轮已投 ${voteLabel(previous)}，不能重复投票`;
     const leader = round.current.tally()[0]?.[0];
     if (!round.current.add(m.user, move, Date.now())) return "本轮已截止";
+    events.current.append("vote", {
+      user: m.user,
+      name: m.name,
+      choice: voteLabel(move),
+      tally: round.current.tally().map(([m, n]) => [voteLabel(m), n]),
+    });
     refresh((v) => v + 1);
+    if (move === SURRENDER) {
+      showEmote("🏳", "alert", 1600);
+      return `已计票 · 投降（${round.current.tally().find(([m]) => m === SURRENDER)?.[1]}票）`;
+    }
     const to = point(move.slice(2, 4));
     fx.current?.text({ ...to, h: 0.6 }, "+1", "good");
     const tally = round.current.tally();
     if (!busy.current) walker.face(to);
-    if (round.current.votes.size === 1)
-      speak(line("firstVote", { move, name: m.name }), true);
-    else if (leader && tally[0][0] !== leader && tally[0][0] === move) {
-      showEmote("!?", "alert");
-      speak(line("leadChange", { move }), true);
-    }
+    if (leader && tally[0][0] !== leader) showEmote("!?", "alert");
     return `已计票 · ${move}`;
-  };
-  const acceptSurrender = (m: Chat) => {
-    if (!m.user.trim()) return "缺少观众 ID，未计票";
-    const s = surrenderRef.current;
-    if (s.votes.has(m.user)) return "已投过投降";
-    s.votes.set(m.user, Date.now());
-    if (s.votes.size === 1) s.firstAt = Date.now();
-    refresh((v) => v + 1);
-    showEmote("🏳", "alert", 1600);
-    return `已计票 · 投降（${s.votes.size}票）`;
   };
   const addDanmaku = (m: Chat, vote: boolean) => {
     if (reducedMotion()) return;
@@ -374,10 +307,12 @@ export default function LiveMode({ exit }: { exit: () => void }) {
     let result = "",
       vote = false;
     if (game.current.isGameOver()) result = "对局已结束";
-    else if (isSurrender(m.text)) result = acceptSurrender(m);
     else if (game.current.turn() !== "w" || busy.current)
       result = "已收到 · 下轮白方回合再投票";
-    else {
+    else if (isSurrender(m.text)) {
+      vote = true;
+      result = acceptVote(m, SURRENDER);
+    } else {
       const move = resolveMove(game.current, m.text);
       if (move) {
         vote = true;
@@ -391,19 +326,47 @@ export default function LiveMode({ exit }: { exit: () => void }) {
         result = "正在识别走法…";
       } else result = "未计票 · 闲聊或走法不明确，可发 e4 / 马到f3";
     }
-    const known = memory.current.viewers.has(m.user);
-    memory.current.addChat(m.user, m.name, m.text, Date.now(), vote);
-    if (!known) {
-      welcomes.current.names.push(m.name);
-      welcomes.current.at = Date.now();
-      if (!busy.current) showEmote("♪", "happy");
-    }
+    events.current.append("chat", {
+      user: m.user,
+      name: m.name,
+      text: m.text,
+      vote,
+      feedback: result,
+    });
     addDanmaku(m, vote);
     setLogs((l) => [...l, { ...m, feedback: result }].slice(-80));
   };
   const ingestRef = useRef(ingest);
   ingestRef.current = ingest;
+  const ingestRoomEvent = useRef(
+    (
+      event: Chat & { kind?: LiveEventKind; at?: number },
+      historical: boolean,
+    ) => {},
+  );
+  ingestRoomEvent.current = (event, historical) => {
+    const kind = event.kind ?? "chat";
+    if (!historical && kind === "chat") return ingestRef.current(event);
+    if (
+      ![
+        "chat",
+        "entry",
+        "follow",
+        "share",
+        "gift",
+        "guard",
+        "superchat",
+        "like",
+      ].includes(kind)
+    )
+      return;
+    events.current.append(kind, event, event.at ?? Date.now(), historical);
+  };
   useEffect(() => {
+    events.current.append("session", {
+      reason: "start",
+      fen: game.current.fen(),
+    });
     musicRef.current.playStart();
     fetch("/api/live/videos")
       .then((r) => r.json())
@@ -411,7 +374,6 @@ export default function LiveMode({ exit }: { exit: () => void }) {
       .catch(() => {});
     return () => {
       alive.current = false;
-      cancelNarration();
       epoch.current++;
       controllers.current.forEach((c) => c.abort());
       engine.current.dispose();
@@ -436,10 +398,13 @@ export default function LiveMode({ exit }: { exit: () => void }) {
         if (!r.ok) throw new Error(data.error);
         if (stopped) return;
         setConnection(data.status || "已连接 · 实时弹幕");
-        for (const m of data.messages as Chat[]) {
+        for (const m of (data.roomEvents ?? data.messages ?? []) as (Chat & {
+          kind?: LiveEventKind;
+          at?: number;
+        })[]) {
           if (!seen.has(m.id)) {
             seen.add(m.id);
-            if (!initial) ingestRef.current(m);
+            ingestRoomEvent.current(m, initial);
           }
         }
         initial = false;
@@ -559,7 +524,7 @@ export default function LiveMode({ exit }: { exit: () => void }) {
       check: g.isCheck() || undefined,
       gameOver: g.isGameOver() || undefined,
       votes: tally.length
-        ? tally.slice(0, 3).map(([m, n]) => `${m}:${n}票`)
+        ? tally.slice(0, 3).map(([m, n]) => `${voteLabel(m)}:${n}票`)
         : undefined,
       controls: {
         bgm: {
@@ -569,117 +534,57 @@ export default function LiveMode({ exit }: { exit: () => void }) {
       },
     };
   };
-  const compress = (token: number) => {
-    const old = memory.current.overflow();
-    if (!old.length) return;
-    if (!aiRef.current) return memory.current.fold(old);
-    void abortable((s) =>
-      model(
-        summaryPrompt,
-        JSON.stringify({
-          previousSummary: memory.current.summary,
-          lines: old.map((e) => `${e.name ?? e.kind}: ${e.text}`),
-        }),
-        s,
-        undefined,
-        { ...modelConfigRef.current, parseTokens: 200 },
-        "summary",
-      ),
-    )
-      .then((text) => {
-        if (token === epoch.current) memory.current.setSummary(text);
-      })
-      .catch(() => {
-        if (token === epoch.current) memory.current.fold(old);
-      });
+  const chatSource = useRef(() => ({
+    situation: situation(),
+    persona: personaRef.current,
+  }));
+  chatSource.current = () => ({
+    situation: situation(),
+    persona: personaRef.current,
+  });
+  const receiveReply = useRef((text: string) => {});
+  receiveReply.current = (text: string) => {
+    const speech = stripBgmCommand(text);
+    if (wantsBgmNext(text)) musicRef.current.requestNext();
+    if (!speech.trim()) return;
+    characterSpeech(speech, "ai", "scheduled-chat");
+    setLastReply(speech);
   };
-  // Streaming chat: one reply per burst of messages, never one per message.
   useEffect(() => {
-    const timer = setInterval(() => {
-      const t = Date.now();
-      // Local welcome when AI is off; batched so a crowd gets one greeting.
-      const w = welcomes.current;
-      if (w.names.length && t - w.at > 2500) {
-        const names = w.names.slice(0, 3).join("、");
-        w.names = [];
-        if (!aiRef.current && !busy.current && speakWelcome(names)) {
-          interruptIdle();
-          act("wave");
-          setTimeout(() => !busy.current && act("idle"), 1800);
-        }
-      }
-      if (
-        !aiRef.current ||
-        chatBusy.current ||
-        narrationBusy.current ||
-        busy.current ||
-        !memory.current.wantsReply()
-      )
-        return;
-      // Wait for a 2.5s lull, but never more than 10s, and leave room after the last reply.
-      if (
-        t - memory.current.lastAt() < 2500 &&
-        t - memory.current.firstAt() < 10000
-      )
-        return;
-      if (t - lastReplyEnd.current < 4000) return;
-      const payload = memory.current.take(situation());
-      chatBusy.current = true;
-      const token = epoch.current,
-        speechVersion = narrationVersion.current;
-      const bubbleLease = beginStream();
-      let said = "";
-      void abortable((s) =>
+    if (!settings.ai) return;
+    const chat = new AIChat({
+      summarize: (system, payload, signal) =>
         model(
-          chatPrompt(personaRef.current),
-          JSON.stringify(payload),
-          s,
-          (text) => {
-            if (
-              token === epoch.current &&
-              aiRef.current &&
-              !busy.current &&
-              speechVersion === narrationVersion.current &&
-              !narrationBusy.current
-            ) {
-              said = text;
-              streamText(bubbleLease, stripBgmCommand(text));
-            }
-          },
-          modelConfigRef.current,
-          "chat",
+          system,
+          payload,
+          signal,
+          undefined,
+          { ...modelConfigRef.current, parseTokens: 600 },
+          "history-summary",
         ),
-      )
-        .catch((e) => {
-          if (alive.current && token === epoch.current) setError(String(e));
-        })
-        .finally(() => {
-          endStream(bubbleLease);
-          chatBusy.current = false;
-          lastReplyEnd.current = Date.now();
-          if (token === epoch.current) {
-            const speech = stripBgmCommand(said);
-            if (wantsBgmNext(said)) musicRef.current.requestNext();
-            if (speech.trim())
-              logLive({ type: "speech", kind: "chat", text: speech });
-            memory.current.addSaid(speech);
-            if (speech.trim())
-              void voiceRef.current.speak(speech).catch(() => {});
-            compress(token);
-          }
-        });
-    }, 1000);
-    return () => clearInterval(timer);
-  }, []);
-  const speakWelcome = (names: string) => {
-    const text = line("welcome", { names });
-    const ok = say(text, true);
-    if (ok) {
-      memory.current.addSaid(text);
-      void voiceRef.current.speak(text).catch(() => {});
-    }
-    return ok;
-  };
+      read: (cursor) => ({
+        ...events.current.read(cursor),
+        ...chatSource.current(),
+      }),
+      request: (system, payload, signal) =>
+        model(
+          system,
+          payload,
+          signal,
+          () => {},
+          modelConfigRef.current,
+          "scheduled-chat",
+        ),
+      reply: (text) => receiveReply.current(text),
+      error: (e) => setError(String(e)),
+    });
+    aiChat.current = chat;
+    chat.start();
+    return () => {
+      chat.stop();
+      if (aiChat.current === chat) aiChat.current = null;
+    };
+  }, [settings.ai]);
   /**
    * Queue a finisher. Given the pieces involved (`cast`), it is shot on the 3D
    * board with the camera; without a cast, or without WebGL, it plays the
@@ -771,14 +676,7 @@ export default function LiveMode({ exit }: { exit: () => void }) {
       .board()
       .flat()
       .find((p) => p?.type === "k" && p.color === g.turn())?.square;
-    const vars = {
-      san: m.san,
-      piece: pieceName[m.captured || "p"],
-      square: m.to,
-    };
-    let text: string;
     if (g.isCheckmate()) {
-      text = mine ? "将死！这一局是我的啦～" : "呜……被将死了。你们赢了！";
       if (kingSquare) {
         f?.reticle(kingSquare, "warn", 2400);
         f?.burst({ ...point(kingSquare), h: 0.5 }, "confetti");
@@ -808,7 +706,6 @@ export default function LiveMode({ exit }: { exit: () => void }) {
           reset();
       }, 30000);
     } else if (g.isDraw()) {
-      text = "这局握手言和。";
       showEmote("🤝", "happy");
     } else if (g.isCheck()) {
       if (kingSquare) {
@@ -817,28 +714,31 @@ export default function LiveMode({ exit }: { exit: () => void }) {
       }
       f?.shake(0.8);
       if (mine) {
-        text = line("myCheck");
         showEmote("♪", "happy");
       } else {
-        text = line("gotChecked");
         showEmote("!!", "alert");
         act("carry");
         setTimeout(() => !busy.current && act("idle"), 1400);
       }
     } else if (m.captured) {
-      text = line(mine ? "myCapture" : "lostPiece", vars);
       if (!mine) {
         showEmote("💢", "angry", 2000);
         act("carry");
         setTimeout(() => !busy.current && act("idle"), 1400);
       }
-    } else text = line(mine ? "myMove" : "theirMove", vars);
-    // A streaming commentary keeps the floor; the reaction yields.
-    speak(text, narrationBusy.current);
-    memory.current.addGame(
-      `${mine ? "你" : "观众"}走了 ${m.san}${m.captured ? `（吃掉${pieceName[m.captured]}）` : ""}${g.isCheckmate() ? "，将死" : g.isCheck() ? "，将军" : ""}`,
-      Date.now(),
-    );
+    }
+    events.current.append("move", {
+      side: m.color,
+      san: m.san,
+      from: m.from,
+      to: m.to,
+      captured: m.captured,
+      promotion: m.promotion,
+      check: g.isCheck(),
+      mate: g.isCheckmate(),
+      draw: g.isDraw(),
+      fen: g.fen(),
+    });
     if (m.promotion && !g.isCheckmate()) {
       f?.burst({ ...point(m.to), h: 0.6 }, "spark", { count: 24 });
       f?.text({ ...point(m.to), h: 1.4 }, "升变!", "hit");
@@ -902,7 +802,6 @@ export default function LiveMode({ exit }: { exit: () => void }) {
     if (game.current.turn() !== "b" || game.current.isGameOver()) return;
     busy.current = true;
     interruptIdle();
-    cancelNarration();
     stopWalking();
     setPhase("大肥鱼思考中");
     act("think");
@@ -970,14 +869,14 @@ export default function LiveMode({ exit }: { exit: () => void }) {
       const victimSquare = m.isEnPassant() ? m.to[0] + m.from[1] : m.to;
       const victimAt = point(victimSquare);
       const style = pickStyle();
-      const shouldComment = Math.random() * 100 < settings.commentaryRate;
-      const commentKind: CommentaryKind =
-        Math.ceil(game.current.history().length / 2) % 2 === 1
-          ? "audience"
-          : "self";
-      const opponentMove = game.current.history().at(-1) || "";
-      if (shouldComment && commentKind === "audience")
-        narrate(a, "audience", opponentMove);
+      events.current.append("analysis", {
+        fen: a.fen,
+        chosenMove: a.bestmove,
+        candidates: a.candidates.map((c) => ({
+          score: c.score,
+          variation: c.pv.slice(0, 6),
+        })),
+      });
       // A board-camera finisher is still filming; don't move pieces under it.
       while (ultimateRef.current?.cinema) await pause(120);
       // Look first: lock on to the destination (red if something gets eaten).
@@ -1044,8 +943,6 @@ export default function LiveMode({ exit }: { exit: () => void }) {
       afterMove(playUci(game.current, a.bestmove));
       act("idle");
       await pause(MOVE_MS);
-      if (shouldComment && commentKind === "self")
-        narrate(a, "self", opponentMove);
       setPhase(game.current.isGameOver() ? "对局结束" : "等待观众");
     } catch (e) {
       if (
@@ -1078,6 +975,14 @@ export default function LiveMode({ exit }: { exit: () => void }) {
         return;
       const winner = round.current.winner(Date.now());
       if (!winner) return;
+      if (winner === SURRENDER) {
+        reset();
+        events.current.append("session", {
+          reason: "surrender",
+          message: "投降通过，已重开",
+        });
+        return;
+      }
       round.current = new VoteRound();
       queue.current = [];
       setLogs((items) =>
@@ -1146,7 +1051,7 @@ export default function LiveMode({ exit }: { exit: () => void }) {
       }
       const tally = round.current.tally();
       const r = Math.random();
-      if (tally.length && r < 0.5) {
+      if (tally.length && tally[0][0] !== SURRENDER && r < 0.5) {
         // Walk over and inspect the move the chat is leaning toward.
         const target = point(tally[0][0].slice(2, 4));
         act("walk");
@@ -1173,13 +1078,6 @@ export default function LiveMode({ exit }: { exit: () => void }) {
       } else if (r < 0.55) {
         act("wave");
         showEmote("♪", "happy");
-        // Nudge a quiet room; with AI on the model does the talking.
-        if (
-          !aiRef.current &&
-          Date.now() - lastChatAt.current > 20000 &&
-          Math.random() < 0.4
-        )
-          speak(line("idle"), true);
         await hold(1800);
         if (still()) act("idle");
       } else {
@@ -1216,8 +1114,8 @@ export default function LiveMode({ exit }: { exit: () => void }) {
     setLastMove(null);
     setLogs([]);
     epoch.current++;
-    cancelNarration();
-    setLastCommentary("");
+    setLastReply("");
+    clearSpeech();
     interruptIdle();
     stopWalking();
     fx.current?.clear();
@@ -1227,9 +1125,13 @@ export default function LiveMode({ exit }: { exit: () => void }) {
     game.current = new Chess();
     round.current = new VoteRound();
     queue.current = [];
-    memory.current.reset();
+    events.current.clear();
+    events.current.append("session", {
+      reason: "reset",
+      fen: game.current.fen(),
+    });
+    aiChat.current?.start();
     ultimateQueue.current = [];
-    surrenderRef.current = { votes: new Map(), firstAt: 0 };
     musicRef.current.playStart();
     busy.current = false;
     setFen(game.current.fen());
@@ -1241,31 +1143,13 @@ export default function LiveMode({ exit }: { exit: () => void }) {
     act("idle");
     setError("");
     setPhase("等待观众");
-    speak("新的一局！观众先手，来吧。");
+    characterSpeech("新的一局！观众先手。", "local", "reset");
     refresh((v) => v + 1);
   };
-  // 投降票在 2 分钟后若超过任何单一走法的票数，自动重开。
-  useEffect(() => {
-    const timer = setInterval(() => {
-      if (game.current.isGameOver()) return;
-      const s = surrenderRef.current;
-      if (!s.votes.size || Date.now() - s.firstAt < 120000) return;
-      const surrenderCount = s.votes.size;
-      const maxMoveCount = round.current.tally()[0]?.[1] ?? 0;
-      surrenderRef.current = { votes: new Map(), firstAt: 0 };
-      refresh((v) => v + 1);
-      if (surrenderCount > maxMoveCount) {
-        speak("投降票最多，重开一局！", false);
-        reset();
-      }
-    }, 1000);
-    return () => clearInterval(timer);
-  }, []);
   const shownPose = moving ? (carried ? "carry" : "walk") : pose.key;
   const tally = round.current.tally();
-  const surrenderLabel = surrenderRef.current.votes.size
-    ? ` · 投降 ${surrenderRef.current.votes.size} 票`
-    : "";
+  const surrenderCount = tally.find(([move]) => move === SURRENDER)?.[1] ?? 0;
+  const surrenderLabel = surrenderCount ? ` · 投降 ${surrenderCount} 票` : "";
   const remaining = tally.length
     ? Math.max(
         0,
@@ -1299,7 +1183,7 @@ export default function LiveMode({ exit }: { exit: () => void }) {
             </span>
             <span className="vote-clock" role="status">
               {(tally.length
-                ? `${remaining} 秒后落子 · ${round.current.votes.size} 票`
+                ? `${remaining} 秒后${tally[0][0] === SURRENDER ? "投降重开" : "落子"} · ${round.current.votes.size} 票`
                 : game.current.isGameOver()
                   ? "对局结束"
                   : busy.current || game.current.turn() === "b"
@@ -1514,10 +1398,10 @@ export default function LiveMode({ exit }: { exit: () => void }) {
               </div>
             </form>
           </section>
-          {lastCommentary && (
+          {lastReply && (
             <section className="commentary-panel">
               <h2>大肥鱼刚刚说</h2>
-              <p>{lastCommentary}</p>
+              <p>{lastReply}</p>
             </section>
           )}
         </div>

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { Chess } from "chess.js";
-import { VoteRound, resolveMove, model } from "./core";
+import { VoteRound, resolveMove, SURRENDER } from "./core";
 describe("live votes", () => {
   it("waits for first vote, ignores duplicate voters and ends after 10 seconds", () => {
     const r = new VoteRound();
@@ -11,12 +11,62 @@ describe("live votes", () => {
     expect(r.winner(10099)).toBeUndefined();
     expect(r.winner(10100)).toBe("e2e4");
   });
-  it("new voters extend quiet window but never beyond five minutes", () => {
+  it("challenger votes extend the countdown but never beyond five minutes", () => {
     const r = new VoteRound();
-    for (let i = 0; i < 40; i++)
-      r.add(String(i), i % 2 ? "d2d4" : "e2e4", 100 + i * 9000);
+    r.add("a", "e2e4", 100);
+    r.add("b", "e2e4", 100);
+    for (let i = 1; i < 40; i++)
+      r.add(String(i), `challenger-${i}`, 100 + i * 9000);
     expect(r.deadline()).toBe(300100);
     expect(r.winner(300100)).toBe("e2e4");
+  });
+  it("accepts extra votes for the current leader without resetting its timer", () => {
+    const r = new VoteRound();
+    r.add("a", "e2e4", 100);
+    expect(r.add("b", "e2e4", 9000)).toBe(true);
+    expect(r.deadline()).toBe(10100);
+    expect(r.tally()).toEqual([["e2e4", 2]]);
+    expect(r.add("late", "e2e4", 10100)).toBe(false);
+  });
+  it("shares voter identity between surrender and moves in both directions", () => {
+    const r = new VoteRound();
+    r.add("a", SURRENDER, 100);
+    expect(r.add("a", "e2e4", 200)).toBe(false);
+    r.add("b", "e2e4", 300);
+    expect(r.add("b", SURRENDER, 400)).toBe(false);
+    expect(r.tally()).toEqual([
+      [SURRENDER, 1],
+      ["e2e4", 1],
+    ]);
+  });
+  it("waits one minute for surrender and does not reset on supporting votes", () => {
+    const r = new VoteRound();
+    r.add("a", SURRENDER, 100);
+    r.add("b", SURRENDER, 50000);
+    expect(r.deadline()).toBe(60100);
+    expect(r.winner(60099)).toBeUndefined();
+    expect(r.winner(60100)).toBe(SURRENDER);
+  });
+  it("uses ten seconds when a move overtakes surrender, preserving tie order", () => {
+    const r = new VoteRound();
+    r.add("a", SURRENDER, 100);
+    r.add("b", "e2e4", 20000);
+    expect(r.deadline()).toBe(80000);
+    expect(r.tally()[0][0]).toBe(SURRENDER);
+    r.add("c", "e2e4", 25000);
+    expect(r.deadline()).toBe(35000);
+    r.add("d", "e2e4", 34000);
+    expect(r.winner(35000)).toBe("e2e4");
+  });
+  it("switches to a minute when surrender overtakes a move", () => {
+    const r = new VoteRound();
+    r.add("a", "e2e4", 100);
+    r.add("b", SURRENDER, 9000);
+    expect(r.deadline()).toBe(19000);
+    r.add("c", SURRENDER, 18000);
+    expect(r.deadline()).toBe(78000);
+    r.add("d", SURRENDER, 77000);
+    expect(r.winner(78000)).toBe(SURRENDER);
   });
   it("accepts only unambiguous legal moves, including promotions and castling", () => {
     const c = new Chess();

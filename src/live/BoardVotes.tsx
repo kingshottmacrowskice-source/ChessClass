@@ -1,4 +1,5 @@
 import { useId } from "react";
+import { SURRENDER } from "./core";
 
 type Project = (
   x: number,
@@ -18,7 +19,9 @@ export default function BoardVotes({
       (8 - Number(square[1])) * 12.5 + 6.25,
     );
   const routes = tally
-    .map(([move, count], rank) => {
+    .map(([move, count], rank) => ({ move, count, rank }))
+    .filter(({ move }) => move !== SURRENDER)
+    .map(({ move, count, rank }) => {
       const from = at(move.slice(0, 2)),
         to = at(move.slice(2, 4));
       // Separate promotion variants sharing exactly the same start/end squares.

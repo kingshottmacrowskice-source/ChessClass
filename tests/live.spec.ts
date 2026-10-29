@@ -1,4 +1,213 @@
 import { test, expect, type Page } from "@playwright/test";
+test("scheduled chat compresses old room history before replying", async ({
+  page,
+}) => {
+  const sent: any[] = [];
+  await page.route("**/api/live/settings", (route) =>
+    route.fulfill({
+      json: { settings: { ai: true, autoConnect: true, room: "123" } },
+    }),
+  );
+  await page.route("**/api/live/bilibili?*", (route) =>
+    route.fulfill({
+      json: {
+        roomEvents: Array.from({ length: 25 }, (_, i) => ({
+          id: `old-${i}`,
+          kind: "entry",
+          user: String(i),
+          name: `历史观众${i}`,
+        })),
+        status: "已连接",
+      },
+    }),
+  );
+  await page.route("**/api/model-chat", (route) => {
+    const body = route.request().postDataJSON();
+    sent.push(body);
+    return route.fulfill(
+      body.stream
+        ? {
+            contentType: "text/event-stream",
+            body: 'data: {"choices":[{"delta":{"content":"新一轮开始了。"}}]}\n\ndata: [DONE]\n\n',
+          }
+        : {
+            json: {
+              choices: [
+                {
+                  message: {
+                    content: "此前有多位观众入场，属于历史，无需再次欢迎。",
+                  },
+                },
+              ],
+            },
+          },
+    );
+  });
+  const start = new Date("2026-01-01T00:00:00Z");
+  await page.clock.install({ time: start });
+  await page.clock.pauseAt(start);
+  await page.goto("/#live");
+  await expect(page.locator(".connection").last()).toContainText("已连接");
+  await page.clock.fastForward(10000);
+  await expect.poll(() => sent.length).toBe(2);
+  expect(sent[0].stream).toBe(false);
+  expect(sent[0].max_tokens).toBe(600);
+  expect(JSON.parse(sent[0].messages[1].content).events).toHaveLength(17);
+  const payload = JSON.parse(sent[1].messages[1].content);
+  expect(payload.historySummary.text).toContain("此前有多位观众入场");
+  expect(payload.history).toHaveLength(8);
+  expect(payload.newEvents).toMatchObject([{ kind: "session" }]);
+  await expect(page.locator(".sprite-bubble")).toHaveText("新一轮开始了。");
+});
+test("room events distinguish initial history, new notifications and local speech", async ({
+  page,
+}) => {
+  const sent: any[] = [];
+  let polls = 0;
+  const roomEvents: any[] = [
+    {
+      id: "old-gift",
+      kind: "gift",
+      user: "1",
+      name: "旧观众",
+      gift: "旧礼物",
+      count: 1,
+    },
+  ];
+  await page.route("**/api/live/settings", (route) =>
+    route.fulfill({
+      json: { settings: { ai: true, autoConnect: true, room: "123" } },
+    }),
+  );
+  await page.route("**/api/live/bilibili?*", (route) => {
+    polls++;
+    return route.fulfill({
+      json: { roomEvents, messages: [], status: "已连接" },
+    });
+  });
+  await page.route("**/api/model-chat", (route) => {
+    const body = route.request().postDataJSON();
+    if (body.stream) sent.push(JSON.parse(body.messages[1].content));
+    return route.fulfill(
+      body.stream
+        ? {
+            contentType: "text/event-stream",
+            body: 'data: {"choices":[{"delta":{"content":"看见新朋友了。"}}]}\n\ndata: [DONE]\n\n',
+          }
+        : { json: { choices: [{ message: { content: "[]" } }] } },
+    );
+  });
+  const start = new Date("2026-01-01T00:00:00Z");
+  await page.clock.install({ time: start });
+  await page.clock.pauseAt(start);
+  await page.goto("/#live");
+  await expect(page.locator(".connection").last()).toContainText("已连接");
+  roomEvents.push(
+    { id: "join", kind: "entry", user: "2", name: "新人" },
+    {
+      id: "new-gift",
+      kind: "gift",
+      user: "2",
+      name: "新人",
+      gift: "小花",
+      count: 2,
+    },
+  );
+  await page.clock.fastForward(1000);
+  await expect.poll(() => polls).toBeGreaterThan(1);
+  await page.clock.fastForward(9000);
+  await expect.poll(() => sent.length).toBe(1);
+  expect(sent[0].history).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        kind: "gift",
+        historical: true,
+        data: expect.objectContaining({ gift: "旧礼物" }),
+      }),
+    ]),
+  );
+  expect(
+    sent[0].newEvents
+      .filter((e: any) => ["entry", "gift"].includes(e.kind))
+      .map((e: any) => e.kind),
+  ).toEqual(["entry", "gift"]);
+  await expect(page.locator(".board-vote")).toHaveCount(0);
+  await page.getByRole("button", { name: "新的一局" }).click();
+  await expect(page.locator(".sprite-bubble")).toHaveText(
+    "新的一局！观众先手。",
+  );
+  await page.clock.fastForward(10000);
+  await expect.poll(() => sent.length).toBe(2);
+  expect(sent[1].newEvents).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        kind: "speech",
+        data: {
+          text: "新的一局！观众先手。",
+          source: "local",
+          reason: "reset",
+        },
+      }),
+    ]),
+  );
+  expect(
+    sent[1].newEvents.some((e: any) => e.kind === "gift" || e.kind === "entry"),
+  ).toBe(false);
+});
+test("surrender shares the round and resolves after a minute without leader extensions", async ({
+  page,
+}) => {
+  await page.route("**/api/live/settings", (route) =>
+    route.fulfill({
+      json: { settings: { ai: false, autoConnect: false } },
+    }),
+  );
+  const start = new Date("2026-01-01T00:00:00Z");
+  await page.clock.install({ time: start });
+  await page.goto("/#live");
+  await expect(page.getByRole("main", { name: "大肥鱼的棋盘" })).toBeVisible();
+  await page.clock.pauseAt(new Date(start.getTime() + 60000));
+  const vote = async (user: string, text: string) => {
+    await page.getByLabel("测试观众").fill(user);
+    await page.getByLabel("测试弹幕").fill(text);
+    await page.getByRole("button", { name: "发送", exact: true }).click();
+  };
+  await vote("观众甲", "投降");
+  await expect(page.locator(".vote-clock")).toContainText("60 秒后投降重开");
+  await vote("观众甲", "e4");
+  await expect(page.locator(".chat-feedback").last()).toContainText(
+    "本轮已投 投降，不能重复投票",
+  );
+  await page.clock.fastForward(50000);
+  await vote("观众乙", "投降");
+  await expect(page.locator(".vote-clock")).toContainText("10 秒后投降重开");
+  await expect(page.locator(".board-vote")).toHaveCount(0);
+  await page.clock.fastForward(9800);
+  await expect(page.locator(".vote-clock")).toContainText("投降重开");
+  await page.clock.fastForward(400);
+  await expect(page.locator(".vote-clock")).toHaveText("等待第一票");
+  await expect(page.locator(".chat-feedback")).toHaveCount(0);
+  await expect(page.locator(".three-board")).toHaveAttribute(
+    "data-piece-count",
+    "32",
+  );
+  await vote("观众甲", "e4");
+  await expect(page.locator('[data-vote="e2e4"]')).toHaveAttribute(
+    "data-leading",
+    "true",
+  );
+  await vote("观众甲", "投降");
+  await expect(page.locator(".chat-feedback").last()).toContainText(
+    "本轮已投 e2e4，不能重复投票",
+  );
+  await vote("观众乙", "投降");
+  await vote("观众丙", "投降");
+  await expect(page.locator('[data-vote="e2e4"]')).toHaveAttribute(
+    "data-leading",
+    "false",
+  );
+  await expect(page.locator(".vote-clock")).toContainText("60 秒后投降重开");
+});
 test("live arena accepts votes, ignores repeat users and resets safely", async ({
   page,
 }) => {
@@ -198,7 +407,7 @@ test("AI batches chat and rejects a stale interpretation after reset", async ({
   });
   await page.goto("/#live-settings");
   await page
-    .getByRole("checkbox", { name: "启用廉价 AI 识别与流式聊天" })
+    .getByRole("checkbox", { name: "启用 AI 走法识别与定时聊天" })
     .check();
   await expect(page.getByRole("status")).toContainText("已同步");
   await page.goto("/#live");
@@ -246,7 +455,7 @@ test("live model controls persist and change both requests", async ({
   await page.reload();
   await expect(page.getByLabel("聊天温度", { exact: true })).toHaveValue("0.4");
   await page
-    .getByRole("checkbox", { name: "启用廉价 AI 识别与流式聊天" })
+    .getByRole("checkbox", { name: "启用 AI 走法识别与定时聊天" })
     .check();
   await expect(page.getByRole("status")).toContainText("已同步");
   await page.goto("/#live");
@@ -311,61 +520,64 @@ test("3D board fits desktop and mobile and retains its pieces", async ({
   }
 });
 
-test("audience and self commentary receive SF evidence and stream naturally", async ({
+test("scheduled AI pulls board and chat events without event-triggered replies", async ({
   page,
 }) => {
-  const evidence: any[] = [];
+  const sent: any[] = [];
+  await page.route("**/api/live/settings", (route) =>
+    route.fulfill({
+      json: {
+        settings: { ai: true, autoConnect: false, persona: "定时测试人设" },
+      },
+    }),
+  );
   await page.route("**/api/model-chat", async (route) => {
     const body = route.request().postDataJSON();
-    if (body.stream) {
-      const payload = JSON.parse(body.messages[1].content);
-      if (payload.commentOn) evidence.push(payload);
-      await route.fulfill({
-        contentType: "text/event-stream",
-        body: 'data: {"choices":[{"delta":{"content":"你这手挺凶，那就看看谁先出手。"}}]}\n\ndata: [DONE]\n\n',
-      });
-    } else
-      await route.fulfill({
-        json: { choices: [{ message: { content: "[]" } }] },
-      });
+    if (body.stream) sent.push(body);
+    await route.fulfill(
+      body.stream
+        ? {
+            contentType: "text/event-stream",
+            body: 'data: {"choices":[{"delta":{"content":"定时收到事件"}}]}\n\ndata: [DONE]\n\n',
+          }
+        : { json: { choices: [{ message: { content: "[]" } }] } },
+    );
   });
-  await page.goto("/#live-settings");
-  await page.getByLabel("走棋点评频率").fill("100");
-  await page
-    .getByRole("checkbox", { name: "启用廉价 AI 识别与流式聊天" })
-    .check();
-  await expect(page.getByRole("status")).toContainText("已同步");
+  const start = new Date("2026-01-01T00:00:00Z");
+  await page.clock.install({ time: start });
+  await page.clock.pauseAt(start);
   await page.goto("/#live");
-  await checkFooterPanels(page);
-  for (const move of ["e4", "Nc3"]) {
-    await page.getByLabel("测试弹幕").fill(move);
-    await page.getByRole("button", { name: "发送", exact: true }).click();
-    await expect(page.locator(".three-board")).toHaveAttribute(
-      "data-pieces",
-      new RegExp(move === "e4" ? "e4:wp" : "c3:wn"),
-      {
-        timeout: 18000,
-      },
-    );
-    await expect(page.locator(".live-status")).toContainText("等待观众", {
-      timeout: 70000,
-    });
-  }
-  await expect.poll(() => evidence.length).toBe(2);
-  expect(evidence.map((e) => e.commentOn)).toEqual(["opponent", "self"]);
-  for (const e of evidence) {
-    expect(e.depth).toBeGreaterThan(0);
-    expect(e.variation.length).toBeGreaterThan(0);
-    expect(e.yourMove).toMatch(
-      /^(?:[KQRBN]?[a-h]?[1-8]?x?[a-h][1-8](?:=[QRBN])?[+#]?|O-O(?:-O)?)$/,
-    );
-    expect(e.score).toBeTruthy();
-  }
-  await expect(page.locator(".commentary-panel")).toContainText("你这手挺凶");
-  await page.screenshot({
-    path: "test-results/live-square-commentary.png",
-    fullPage: true,
-  });
+  await expect(
+    page.getByRole("status", { name: "配置同步状态" }),
+  ).toContainText("已同步");
+  await page.getByLabel("测试弹幕").fill("e4");
+  await page.getByRole("button", { name: "发送", exact: true }).click();
+  await expect(page.locator(".sprite-bubble")).toHaveCount(0);
+  await page.clock.fastForward(9999);
+  expect(sent).toHaveLength(0);
+  await page.clock.fastForward(1);
+  await expect.poll(() => sent.length).toBe(1);
+  expect(sent[0].messages[0].content).toContain("定时测试人设");
+  const first = JSON.parse(sent[0].messages[1].content);
+  expect(
+    first.newEvents.some((e: any) => e.kind === "chat" && e.data.text === "e4"),
+  ).toBe(true);
+  expect(first.situation.fen).toBeTruthy();
+  await expect(page.locator(".sprite-bubble")).toHaveText("定时收到事件");
+  await page.clock.fastForward(9999);
+  expect(sent).toHaveLength(1);
+  await page.clock.fastForward(4000);
+  await expect.poll(() => sent.length).toBe(2);
+  const second = JSON.parse(sent[1].messages[1].content);
+  expect(
+    second.newEvents.some((e: any) => e.kind === "move" && e.data.san === "e4"),
+  ).toBe(true);
+  expect(
+    second.newEvents.every((e: any) => e.id > first.newEvents.at(-1).id),
+  ).toBe(true);
+  await page.getByRole("button", { name: "返回分析" }).click();
+  await page.clock.fastForward(600000);
+  expect(sent).toHaveLength(2);
 });
 
 // Operator controls are part of the footer, without changing production visibility.

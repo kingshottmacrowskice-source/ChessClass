@@ -43,8 +43,7 @@ export function useSpeechBubble(initial: string) {
   };
   const dismiss = (id: number) => {
     clearTimer(id);
-    if (alive.current)
-      commit(listRef.current.filter((b) => b.id !== id));
+    if (alive.current) commit(listRef.current.filter((b) => b.id !== id));
   };
   const schedule = (id: number, text: string) => {
     clearTimer(id);
@@ -58,9 +57,7 @@ export function useSpeechBubble(initial: string) {
     texts.current.set(id, text);
     let list = [...listRef.current, { id, text }];
     if (list.length > MAX_BUBBLES) {
-      list
-        .slice(0, list.length - MAX_BUBBLES)
-        .forEach((b) => clearTimer(b.id));
+      list.slice(0, list.length - MAX_BUBBLES).forEach((b) => clearTimer(b.id));
       list = list.slice(list.length - MAX_BUBBLES);
     }
     commit(list);
@@ -73,8 +70,7 @@ export function useSpeechBubble(initial: string) {
     if (
       soft &&
       (streaming.current ||
-        (lastShownAt.current &&
-          performance.now() - lastShownAt.current < 2500))
+        (lastShownAt.current && performance.now() - lastShownAt.current < 2500))
     )
       return false;
     streaming.current = false;
@@ -92,7 +88,9 @@ export function useSpeechBubble(initial: string) {
     if (!alive.current) return;
     lastShownAt.current = performance.now();
     texts.current.set(id, value);
-    commit(listRef.current.map((b) => (b.id === id ? { ...b, text: value } : b)));
+    commit(
+      listRef.current.map((b) => (b.id === id ? { ...b, text: value } : b)),
+    );
   };
   const endStream = (id: number) => {
     if (!alive.current) return;
@@ -114,5 +112,12 @@ export function useSpeechBubble(initial: string) {
     };
   }, []);
 
-  return { bubbles, say, beginStream, streamText, endStream };
+  const clear = () => {
+    timers.current.forEach((timer) => clearTimeout(timer));
+    timers.current.clear();
+    texts.current.clear();
+    streaming.current = false;
+    commit([]);
+  };
+  return { bubbles, say, beginStream, streamText, endStream, clear };
 }

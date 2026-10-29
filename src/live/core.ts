@@ -69,20 +69,30 @@ export function resolveMove(c: Chess, text: string): string | null {
   }
   return null;
 }
+export const SURRENDER = "surrender";
+export const voteLabel = (choice: string) =>
+  choice === SURRENDER ? "投降" : choice;
 export class VoteRound {
   votes = new Map<string, string>();
   first = 0;
   last = 0;
+  /** Last vote that started or reset the shared countdown. */
+  private countdownAt = 0;
   add(user: string, move: string, now: number) {
     if (this.votes.has(user) || now >= this.deadline()) return false;
+    const leader = this.tally()[0]?.[0];
     this.votes.set(user, move);
     if (this.votes.size === 1) this.first = now;
+    if (move !== leader) this.countdownAt = now;
     this.last = now;
     return true;
   }
   deadline() {
     return this.votes.size
-      ? Math.min(this.first + 300000, this.last + 10000)
+      ? Math.min(
+          this.first + 300000,
+          this.countdownAt + (this.tally()[0][0] === SURRENDER ? 60000 : 10000),
+        )
       : Infinity;
   }
   tally() {

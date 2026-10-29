@@ -41,7 +41,7 @@ export default function LiveSettings() {
         if (!response.ok) throw new Error(data.error || "连接失败");
         if (!stopped) {
           setDanmakuStatus(
-            `${data.status || "等待连接"} · 已收到 ${data.received || 0} 条弹幕`,
+            `${data.status || "等待连接"} · 已收到 ${data.received || 0} 条直播事件`,
           );
           setDanmakuNotice(data.notice || "");
         }
@@ -187,29 +187,18 @@ export default function LiveSettings() {
           100%
           只走最优着法（最强）；调低后大肥鱼会偶尔走次优着法、甚至乱走送子，方便新手赢棋。
         </small>
-        <label>
-          走棋点评频率：{settings.commentaryRate}%
-          <input
-            aria-label="走棋点评频率"
-            type="range"
-            min="0"
-            max="100"
-            step="5"
-            value={settings.commentaryRate}
-            onChange={(e) => set({ commentaryRate: Number(e.target.value) })}
-          />
-        </label>
         <label className="check">
           <input
             type="checkbox"
             checked={settings.ai}
             onChange={(e) => set({ ai: e.target.checked })}
           />
-          启用廉价 AI 识别与流式聊天
+          启用 AI 走法识别与定时聊天
         </label>
         <small>
-          复用服务端密钥；弹幕停顿 2.5 秒（最长 10 秒）合并成一次流式回复；
-          刷屏和重复内容自动折叠，旧对话压缩成摘要。
+          棋局与弹幕汇集为事件流，独立聊天模块定时读取。事件多时最短每 10
+          秒读取一次， 事件少时逐步延长，最长每 10 分钟一次；没有新事件时不请求
+          AI。
         </small>
       </section>
 

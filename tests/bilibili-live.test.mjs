@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { deflateSync, brotliCompressSync } from "node:zlib";
+import { roomEvents } from "../scripts/bilibili-events.mjs";
 import {
   packet,
   decodePackets,
@@ -12,6 +13,111 @@ const chat = {
   cmd: "DANMU_MSG:4:0:2:2:2:0",
   info: [[], "大肥鱼测试", [123, "观众"]],
 };
+test("normalizes room interactions and keeps payment messages out of chat votes", async () => {
+  const room = new BilibiliRoom("12", setup());
+  try {
+    await room.ready;
+    for (const event of [
+      { cmd: "INTERACT_WORD", data: { uid: 1, uname: "入场者", msg_type: 1 } },
+      {
+        cmd: "SEND_GIFT",
+        data: {
+          uid: 2,
+          uname: "送礼者",
+          giftName: "小花",
+          num: 3,
+          coin_type: "silver",
+          total_coin: 100,
+        },
+      },
+      {
+        cmd: "GUARD_BUY",
+        data: { uid: 3, username: "舰长", guard_level: 3, num: 1 },
+      },
+      {
+        cmd: "SUPER_CHAT_MESSAGE",
+        data: {
+          uid: 4,
+          user_info: { uname: "留言者" },
+          message: "e4",
+          price: 30,
+        },
+      },
+      { cmd: "INTERACT_WORD", data: { uid: 5, msg_type: 2 } },
+      { cmd: "LIKE_INFO_V3_CLICK", data: { uid: 6 } },
+    ])
+      room.receive(event);
+    room.receive(chat);
+    const snapshot = room.snapshot();
+    assert.deepEqual(
+      snapshot.roomEvents.map((e) => e.kind),
+      ["entry", "gift", "guard", "superchat", "follow", "like", "chat"],
+    );
+    assert.equal(snapshot.messages.length, 1);
+    assert.equal(snapshot.messages[0].text, "大肥鱼测试");
+    assert.equal(snapshot.roomEvents[1].count, 3);
+    assert.equal(snapshot.roomEvents[3].currency, "CNY");
+    assert.equal(new Set(snapshot.roomEvents.map((e) => e.id)).size, 7);
+    assert.deepEqual(room.snapshot().roomEvents, snapshot.roomEvents);
+  } finally {
+    room.stop();
+  }
+});
+test("decodes V2 entrance and multi-item gifts, ignoring malformed notifications", () => {
+  const uint = (n) => {
+    const out = [];
+    let v = BigInt(n);
+    do {
+      const b = Number(v & 127n);
+      v >>= 7n;
+      out.push(b | (v ? 128 : 0));
+    } while (v);
+    return Buffer.from(out);
+  };
+  const int = (key, n) => Buffer.concat([uint(key * 8), uint(n)]);
+  const str = (key, text) => {
+    const b = Buffer.from(text);
+    return Buffer.concat([uint(key * 8 + 2), uint(b.length), b]);
+  };
+  const entry = Buffer.concat([
+    int(1, 123),
+    str(2, "观众"),
+    int(5, 1),
+  ]).toString("base64");
+  assert.deepEqual(
+    roomEvents({ cmd: "INTERACT_WORD_V2", data: { pb: entry } }),
+    [{ kind: "entry", user: "123", name: "观众" }],
+  );
+  const item = (gift, count) => Buffer.concat([str(2, gift), int(3, count)]);
+  const gifts = Buffer.concat([
+    int(1, 123),
+    str(2, "观众"),
+    str(10, item("小花", 2)),
+    str(10, item("星星", 1)),
+  ]).toString("base64");
+  assert.deepEqual(
+    roomEvents({ cmd: "SEND_GIFT_V2", data: { pb: gifts } }).map((e) => [
+      e.gift,
+      e.count,
+    ]),
+    [
+      ["小花", 2],
+      ["星星", 1],
+    ],
+  );
+  assert.deepEqual(
+    roomEvents({ cmd: "INTERACT_WORD_V2", data: { pb: "gA==" } }),
+    [],
+  );
+  assert.deepEqual(
+    roomEvents({ cmd: "COMBO_SEND", data: { giftName: "小花", num: 10 } }),
+    [],
+  );
+  assert.deepEqual(
+    roomEvents({ cmd: "SEND_GIFT", data: { giftName: "x", num: -1 } }),
+    [],
+  );
+});
 function compressed(data, version) {
   const body = (version === 2 ? deflateSync : brotliCompressSync)(data);
   const result = Buffer.concat([packet(5).subarray(0, 16), body]);

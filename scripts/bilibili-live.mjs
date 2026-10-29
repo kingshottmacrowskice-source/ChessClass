@@ -1,5 +1,6 @@
 import { inflateSync, brotliDecompressSync } from "node:zlib";
 import { randomUUID } from "node:crypto";
+import { roomEvents } from "./bilibili-events.mjs";
 
 export function packet(operation, value = "") {
   const body = Buffer.from(
@@ -57,6 +58,7 @@ export class BilibiliRoom {
     this.buvid = parts.buvid3 || "";
     this.notice = "";
     this.messages = [];
+    this.roomEvents = [];
     this.connected = false;
     this.status = "正在连接实时弹幕…";
     this.session = randomUUID();
@@ -79,6 +81,7 @@ export class BilibiliRoom {
       connected: this.connected,
       status: this.status,
       messages: this.messages.slice(),
+      roomEvents: this.roomEvents.slice(),
       received: this.sequence,
       events: this.events,
       lastEvent: this.lastEvent,
@@ -198,7 +201,10 @@ export class BilibiliRoom {
       this.notice = String(data.data?.notice_msg || "Bilibili 提示需要登录");
       return;
     }
-    if (!String(data.cmd).startsWith("DANMU_MSG")) return;
+    if (!String(data.cmd).startsWith("DANMU_MSG")) {
+      for (const event of roomEvents(data)) this.pushEvent(event);
+      return;
+    }
     const info = data.info;
     if (
       !Array.isArray(info) ||
@@ -211,15 +217,28 @@ export class BilibiliRoom {
       this.status = "已连接 · 部分弹幕缺少用户标识，未计票";
       return;
     }
-    this.messages.push({
-      id: `${this.session}:${++this.sequence}`,
+    const message = this.pushEvent({
+      kind: "chat",
       user: String(uid),
       name: String(name || uid).slice(0, 40),
       text: info[1].slice(0, 300),
     });
+    this.messages.push(message);
     this.status = "已连接 · 正在接收实时弹幕";
     if (this.messages.length > 300)
       this.messages.splice(0, this.messages.length - 300);
+  }
+
+  pushEvent(event) {
+    const entry = {
+      ...event,
+      id: `${this.session}:${++this.sequence}`,
+      at: Date.now(),
+    };
+    this.roomEvents.push(entry);
+    if (this.roomEvents.length > 300)
+      this.roomEvents.splice(0, this.roomEvents.length - 300);
+    return entry;
   }
 
   disconnect() {

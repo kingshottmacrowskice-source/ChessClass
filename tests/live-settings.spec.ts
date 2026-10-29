@@ -117,7 +117,7 @@ test("settings reach an isolated live source without clicks or reloads", async (
     await expect(source.locator('[data-vote="e2e4"]')).toHaveCount(1);
     await expect(source.locator(".chat-log p")).toHaveCount(1);
     await editor.getByLabel("直播间号", { exact: true }).fill("67890");
-    await editor.getByLabel("启用廉价 AI 识别与流式聊天").check();
+    await editor.getByLabel("启用 AI 走法识别与定时聊天").check();
     await editor.getByLabel("声音来源").selectOption("cosyvoice");
     await expect.poll(() => rooms.includes("67890")).toBe(true);
     await expect
