@@ -74,7 +74,7 @@ function Diagram({ type, grid }: { type: string; grid: string[] }) {
 }
 
 /** Sidebar cheat sheet: how each piece moves, how to vote, and how to read the last move. */
-export default function RulesPanel({ lastSan }: { lastSan?: string }) {
+export default function RulesPanel({ lastSan, demonMode }: { lastSan?: string; demonMode?: boolean }) {
   return (
     <section className="rules-board" aria-label="走棋规则与投票方法">
       <h2>棋子怎么走</h2>
@@ -95,6 +95,10 @@ export default function RulesPanel({ lastSan }: { lastSan?: string }) {
       <p className="rule-legend">
         <i className="mv" /> 可以走 <i className="cap" /> 只能吃子
       </p>
+      {demonMode && <p className="rule-legend">召唤炮：在己方半场空格召唤。炮横竖走，不吃子时不能越子；吃子时必须隔着且仅隔着一枚任意方棋子。坑位不能落子，也不算炮架。</p>}
+      {demonMode && <p className="rule-legend">攻击与击破：进入攻击范围只是威胁，不造成伤害。群体攻击先统一结算所有目标的防御技能；若攻击源被听桥击破，整次群攻在造成伤害前取消。未中断时再逐个扣护盾，无盾才击破；直接击破绕过护盾，也不触发听桥。听桥仅对敌方来源的实际受击反击，成功击破攻击来源才免伤；没有棋子来源的轰炸、以及友方来源的误伤，都不能被听桥反击。冷却5回合（10次行动）。</p>}
+      {demonMode && <p className="rule-legend">欧贝利斯克的巨神兵：随机献祭己方三枚非王棋子，在己方半场召唤，占2×2格，整体沿任意方向走一格。初始护盾2点，每次攻击减1，前两次挡住攻击。主动技能献祭另外两枚己方棋子，攻击前沿所在行及再前方一行的敌人。同次范围攻击只命中它一次。非专属道具召唤的巨神兵在该次行动结束后直接击破。</p>}
+      {demonMode && <p className="rule-legend">伦蒂尼姆城防副炮青春版：随机锁定敌方棋子，跟随移动，之后双方共行动3步时轰炸中心及周围12格菱形区域，不分敌我。目标提前阵亡则轰炸最后位置；国王被命中判负，双方国王同时被命中为和棋。</p>}
       <h2>怎么投票</h2>
       <ul className="vote-howto">
         <li>

@@ -1,6 +1,8 @@
 import { useId, useEffect, useRef } from "react";
 
 const names: Record<string, string> = {
+  o: "欧贝利斯克的巨神兵",
+  c: "炮",
   p: "兵",
   r: "车",
   n: "马",
@@ -63,6 +65,28 @@ function SculptedPiece({
       <g stroke={edge} strokeWidth="1.2" strokeLinejoin="round">
         <path d="M29 89 Q40 77 40 58 L60 58 Q60 77 71 89Z" fill={paint} />
         <ellipse cx="50" cy="61" rx="17" ry="5" fill={rim} />
+        {type === "o" && (
+          <g stroke="#102442" strokeWidth="2">
+            <path d="M28 82L22 48L9 41L6 56L15 78L28 86ZM72 82L78 48L91 41L94 56L85 78L72 86Z" fill="#2862aa"/>
+            <path d="M24 43L37 32H63L76 43L67 76H33Z" fill="#387ed1"/>
+            <path d="M35 28L26 8L43 21H57L74 8L65 28L62 42H38Z" fill="#528ee0"/>
+            <path d="M37 27H46V32H37ZM54 27H63V32H54Z" fill="#ff525d"/>
+            <path d="M45 37H55V41H45Z" fill="#182641"/>
+            <path d="M35 49H65V57H35ZM40 61H60V69H40Z" fill="#79b6ed"/>
+            <path d="M32 75H48L45 101H27ZM52 75H68L73 101H55Z" fill="#204e90"/>
+            <path d="M23 99H46V108H20ZM54 99H77L80 108H54Z" fill="#4280bd"/>
+            <path d="M8 54H22V76H8ZM78 54H92V76H78Z" fill="#75b5df"/>
+          </g>
+        )}
+        {type === "c" && (
+          <g>
+            <path d="M24 81 L30 42 L70 42 L76 81Z" fill={paint} />
+            <ellipse cx="50" cy="42" rx="20" ry="10" fill={rim} />
+            <ellipse cx="50" cy="42" rx="12" ry="6" fill="#080e19" />
+            <path d="M28 62H72V69H28Z" fill="#bb8a42" />
+            <path d="M34 72H66V83H34Z" fill={rim} />
+          </g>
+        )}
         {type === "p" && (
           <>
             <path d="M36 57 Q50 49 64 57 L65 62 Q50 68 35 62Z" fill={paint} />

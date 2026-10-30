@@ -1,3 +1,9 @@
+import {
+  behaviorLabels,
+  itemLabels,
+  defaultBehaviorWeights,
+  defaultItemWeights,
+} from "./demonWeights";
 import { useEffect, useRef, useState } from "react";
 import { useLiveSettings, type LiveSettings } from "./liveConfig";
 import { Voice, type VoiceConfig } from "./voice";
@@ -166,7 +172,7 @@ export default function LiveSettings() {
       <section className="settings-panel">
         <h2>对局</h2>
         <label>
-          Stockfish 深度：{settings.depth}
+          Stockfish 深度（仅普通模式）：{settings.depth}
           <input
             type="range"
             min="1"
@@ -204,6 +210,106 @@ export default function LiveSettings() {
           秒读取一次， 事件少时逐步延长，最长每 10 分钟一次；没有新事件时不请求
           AI。
         </small>
+      </section>
+
+      <section className="settings-panel">
+        <h2>魔鱼模式</h2>
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={settings.demonMode}
+            onChange={(e) => set({ demonMode: e.target.checked })}
+          />
+          启用魔鱼模式
+        </label>
+        <label>
+          特殊行动概率：{settings.demonChance}%
+          <input
+            aria-label="特殊行动概率"
+            type="range"
+            min="0"
+            max="100"
+            step="1"
+            value={settings.demonChance}
+            onChange={(e) => set({ demonChance: Number(e.target.value) })}
+          />
+        </label>
+        <small>
+          普通走棋概率为 {100 - settings.demonChance}
+          %。触发特殊行动后，按下列权重抽取行为；抽到道具后再按道具权重抽取，落点仍随机选择。
+          权重范围0–100，不必合计100；0表示禁用。仅在当前可用的选项中按比例抽取，无可用选项或全部为0时正常走棋。
+        </small>
+        <h3>特殊行为权重</h3>
+        {Object.entries(behaviorLabels).map(([key, label]) => {
+          const kind = key as keyof typeof behaviorLabels;
+          return (
+            <label key={key}>
+              {label}
+              <input
+                type="number"
+                aria-label={label + "权重"}
+                min="0"
+                max="100"
+                step="1"
+                
+                value={settings.demonBehaviorWeights[kind]}
+                onChange={(e) =>
+                  set({
+                    demonBehaviorWeights: {
+                      ...settings.demonBehaviorWeights,
+                      [kind]: Math.max(
+                        0,
+                        Math.min(100, Math.round(Number(e.target.value) || 0)),
+                      ),
+                    },
+                  })
+                }
+              />
+            </label>
+          );
+        })}
+        <h3>道具权重</h3>
+        {Object.entries(itemLabels).map(([key, label]) => {
+          const item = key as keyof typeof itemLabels;
+          return (
+            <label key={key}>
+              {label}
+              <input
+                type="number"
+                aria-label={label + "权重"}
+                min="0"
+                max="100"
+                step="1"
+                value={settings.demonItemWeights[item]}
+                onChange={(e) =>
+                  set({
+                    demonItemWeights: {
+                      ...settings.demonItemWeights,
+                      [item]: Math.max(
+                        0,
+                        Math.min(100, Math.round(Number(e.target.value) || 0)),
+                      ),
+                    },
+                  })
+                }
+              />
+            </label>
+          );
+        })}
+        <small>
+          例如仅启用毁灭菇、死者苏生、召唤炮并设为1、2、1，三者均可用时抽取比例为25%、50%、25%。没有阵亡棋子时，死者苏生自动排除。巨神兵在场且有两枚可献祭棋子时，主动技能参与抽取。
+        </small>
+        <button
+          type="button"
+          onClick={() =>
+            set({
+              demonBehaviorWeights: { ...defaultBehaviorWeights },
+              demonItemWeights: { ...defaultItemWeights },
+            })
+          }
+        >
+          恢复默认权重
+        </button>
       </section>
 
       <section className="settings-panel">

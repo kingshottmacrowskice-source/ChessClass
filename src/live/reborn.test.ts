@@ -1,0 +1,30 @@
+import { expect, it } from "vitest";
+import { Chess } from "chess.js";
+import { DemonRules } from "./rules";
+it("records a real capture, revives exactly one piece and consumes its loss", () => {
+ const g = new Chess("7k/8/2n5/8/8/8/8/K1R5 w - - 0 1");
+ const r = new DemonRules();
+ expect(r.specialActions(g).some(a => a.item === "monster-reborn")).toBe(false);
+ r.play(g, "c1c6");
+ expect(r.lost.b).toEqual(["n"]);
+ r.craters.add("d5");
+ const choices = r.specialActions(g).filter(a => a.item === "monster-reborn");
+ expect(choices.length).toBeGreaterThan(0);
+ expect(choices.every(a => Number(a.target[1]) >= 5 && !g.get(a.target) && a.target !== "d5")).toBe(true);
+ const action = choices.find(a => a.target === "e5")!;
+ r.commitSpecial(g, action);
+ expect(g.get("e5")).toEqual({type:"n",color:"b"});
+ expect(r.lost.b).toEqual([]);
+ expect(g.turn()).toBe("w");
+ expect(() => r.commitSpecial(g, action)).toThrow();
+});
+it("isolates simulations and excludes illegal pawn ranks and invented losses", () => {
+ const r = new DemonRules();
+ const g = new Chess("7k/8/2p5/8/8/8/8/K1R5 w - - 0 1");
+ const fork = r.fork(); fork.play(g,"c1c6");
+ expect(r.lost.b).toEqual([]);
+ const choices = fork.specialActions(g).filter(a=>a.item==="monster-reborn");
+ expect(choices.every(a=>a.target[1]!=="8")).toBe(true);
+ expect(()=>r.commitSpecial(new Chess(g.fen()),choices[0])).toThrow();
+ fork.reset(); expect(fork.lost.b).toEqual([]);
+});

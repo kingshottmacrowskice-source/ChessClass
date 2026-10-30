@@ -159,6 +159,10 @@ export default function livePlugin() {
             room: "string",
             depth: "number",
             difficulty: "number",
+            demonMode: "boolean",
+            demonChance: "number",
+            demonBehaviorWeights: "object",
+            demonItemWeights: "object",
             commentaryRate: "number",
             ai: "boolean",
             autoConnect: "boolean",
@@ -178,6 +182,36 @@ export default function livePlugin() {
             )
               return send(400, { error: "Invalid settings" });
           }
+          for (const [field, keys] of [
+            ["demonBehaviorWeights", ["destroy", "movement", "item", "skill"]],
+            [
+              "demonItemWeights",
+              ["doom-shroom", "monster-reborn", "summon-cannon", "tingqiao-stone", "londinium-artillery", "summon-obelisk"],
+            ],
+          ]) {
+            if (!Object.hasOwn(patch, field)) continue;
+            if (
+              Object.keys(patch[field]).some((key) => !keys.includes(key)) ||
+              Object.values(patch[field]).some(
+                (value) => typeof value !== "number" || !Number.isFinite(value),
+              )
+            )
+              return send(400, { error: "Invalid demon weights" });
+            patch[field] = Object.fromEntries(
+              Object.entries(patch[field]).map(([key, value]) => [
+                key,
+                Math.max(0, Math.min(100, Math.round(value))),
+              ]),
+            );
+          }
+          if (Object.hasOwn(patch, "demonChance")) {
+            if (!Number.isFinite(patch.demonChance))
+              return send(400, { error: "Invalid demon chance" });
+            patch.demonChance = Math.max(
+              0,
+              Math.min(100, Math.round(patch.demonChance)),
+            );
+          }
           if (Object.hasOwn(patch, "boardAngle")) {
             if (!Number.isFinite(patch.boardAngle))
               return send(400, { error: "Invalid board angle" });
@@ -187,7 +221,15 @@ export default function livePlugin() {
             );
           }
           const write = writes.then(async () => {
-            const settings = { ...(await read()), ...patch };
+            const previous = await read();
+            const settings = { ...previous, ...patch };
+            for (const field of ["demonBehaviorWeights", "demonItemWeights"]) {
+              if (Object.hasOwn(patch, field))
+                settings[field] = {
+                  ...(previous?.[field] || {}),
+                  ...patch[field],
+                };
+            }
             await mkdir(dirname(file), { recursive: true });
             await writeFile(file + ".tmp", JSON.stringify(settings), "utf8");
             await rename(file + ".tmp", file);

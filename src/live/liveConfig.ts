@@ -1,3 +1,10 @@
+import {
+  normalizeWeights,
+  defaultBehaviorWeights,
+  defaultItemWeights,
+  type BehaviorWeights,
+  type ItemWeights,
+} from "./demonWeights";
 import { boardAngle, DEFAULT_BOARD_ANGLE } from "./boardView";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { readModelConfig, type ModelConfig } from "./core";
@@ -12,6 +19,10 @@ export type LiveSettings = {
   boardAngle: number;
   depth: number;
   difficulty: number;
+  demonMode: boolean;
+  demonChance: number;
+  demonBehaviorWeights: BehaviorWeights;
+  demonItemWeights: ItemWeights;
   commentaryRate: number;
   ai: boolean;
   persona: string;
@@ -33,6 +44,10 @@ function readControl(): Pick<
   | "boardAngle"
   | "depth"
   | "difficulty"
+  | "demonMode"
+  | "demonChance"
+  | "demonBehaviorWeights"
+  | "demonItemWeights"
   | "commentaryRate"
   | "ai"
 > {
@@ -56,6 +71,18 @@ function readControl(): Pick<
         ? Math.max(0, Math.min(100, Math.round(v.commentaryRate)))
         : 35,
       ai: typeof v.ai === "boolean" ? v.ai : false,
+      demonMode: v.demonMode === true,
+      demonBehaviorWeights: normalizeWeights(
+        v.demonBehaviorWeights,
+        defaultBehaviorWeights,
+      ),
+      demonItemWeights: normalizeWeights(
+        v.demonItemWeights,
+        defaultItemWeights,
+      ),
+      demonChance: Number.isFinite(v.demonChance)
+        ? Math.max(0, Math.min(100, Math.round(v.demonChance)))
+        : 30,
     };
   } catch {
     return {
@@ -66,6 +93,10 @@ function readControl(): Pick<
       boardAngle: DEFAULT_BOARD_ANGLE,
       depth: 2,
       difficulty: 100,
+      demonMode: false,
+      demonChance: 30,
+      demonBehaviorWeights: { ...defaultBehaviorWeights },
+      demonItemWeights: { ...defaultItemWeights },
       commentaryRate: 35,
       ai: false,
     };
@@ -101,6 +132,10 @@ function persist(next: LiveSettings) {
         boardAngle: next.boardAngle,
         depth: next.depth,
         difficulty: next.difficulty,
+        demonMode: next.demonMode,
+        demonChance: next.demonChance,
+        demonBehaviorWeights: next.demonBehaviorWeights,
+        demonItemWeights: next.demonItemWeights,
         commentaryRate: next.commentaryRate,
         ai: next.ai,
       }),
@@ -153,6 +188,14 @@ export function useLiveSettings(editor = false) {
             ...data.settings,
             ...pending.current,
           } as LiveSettings;
+          next.demonBehaviorWeights = normalizeWeights(
+            next.demonBehaviorWeights,
+            defaultBehaviorWeights,
+          );
+          next.demonItemWeights = normalizeWeights(
+            next.demonItemWeights,
+            defaultItemWeights,
+          );
           current.current = next;
           persist(next);
           setSettings((prev) =>

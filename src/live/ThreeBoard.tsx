@@ -1,3 +1,4 @@
+import { giantAt, type Giants } from "./obelisk";
 import { PIECE_FORWARD_OFFSET } from "./boardView";
 import { useLayoutEffect, useRef, useState } from "react";
 import * as T from "three";
@@ -16,6 +17,8 @@ import { createPostFX } from "./boardPostFX";
 
 type Props = {
   fen: string;
+  cannons?: string[];
+  giants?: Giants;
   actor: { x: number; y: number };
   facing: number;
   carried: string;
@@ -406,13 +409,14 @@ export default function ThreeBoard(props: Props) {
       const entries = cachedPieces
         .filter(
           (v) =>
+            !(p.giants && giantAt(p.giants,v.square) && !p.giants.has(v.square)) &&
             !p.hidden.includes(v.square) &&
             (!show || (v.square !== show.square && v.square !== show.victim)),
         )
         .map((v) => ({
           square: String(v.square),
           type: String(
-            p.move?.to === v.square && p.progress < 1 ? p.move.piece : v.type,
+            p.giants?.has(v.square) ? "o" : p.cannons?.includes(v.square) ? "c" : p.move?.to === v.square && p.progress < 1 ? p.move.piece : v.type,
           ),
           color: String(v.color),
         }));
@@ -482,6 +486,7 @@ export default function ThreeBoard(props: Props) {
           obj.position.y =
             Math.sin(p.progress * Math.PI) * (e.type === "n" ? 0.35 : 0.07);
         }
+        if(e.type === "o") { obj.position.x += .5; obj.position.z -= .5; obj.scale.setScalar(2); }
         if (show?.square === e.square) {
           const ease = (t: number) => 1 - (1 - Math.min(1, t)) ** 3;
           if (p.beat.phase === "ascend")
@@ -720,7 +725,7 @@ export default function ThreeBoard(props: Props) {
     <>
       <div className="piece-texture-sources" aria-hidden="true">
         {["w", "b"].flatMap((color) =>
-          ["p", "r", "n", "b", "q", "k"].map((type) => (
+          ["p", "r", "n", "b", "q", "k", "c", "o"].map((type) => (
             <span key={color + type} data-art={color + type}>
               <ChessPiece type={type} color={color} />
             </span>

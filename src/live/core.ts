@@ -36,15 +36,19 @@ export function readModelConfig(): ModelConfig {
     return { ...modelDefaults };
   }
 }
-import { Chess } from "chess.js";
+import { Chess, type Move } from "chess.js";
 export const uciOf = (m: { from: string; to: string; promotion?: string }) =>
   m.from + m.to + (m.promotion || "");
-export function resolveMove(c: Chess, text: string): string | null {
+export function resolveMove(
+  c: Chess,
+  text: string,
+  legalMoves?: Move[],
+): string | null {
   const s = text
     .trim()
     .replace(/^投票\s*/, "")
     .replace(/\s+/g, "");
-  const moves = c.moves({ verbose: true });
+  const moves = legalMoves ?? c.moves({ verbose: true });
   const direct = moves.filter(
     (m) =>
       uciOf(m).toLowerCase() === s.toLowerCase() ||
@@ -53,7 +57,8 @@ export function resolveMove(c: Chess, text: string): string | null {
   );
   if (direct.length === 1) return uciOf(direct[0]);
   const match = s.match(/^([a-h][1-8])(?:到|走|至|→|-)([a-h][1-8])([qrbn])?$/i);
-  if (match) return resolveMove(c, match[1] + match[2] + (match[3] || ""));
+  if (match)
+    return resolveMove(c, match[1] + match[2] + (match[3] || ""), moves);
   const cn = s.match(/^(兵|马|象|车|后|王)(?:到|走|至|吃)?([a-h][1-8])$/i);
   if (cn) {
     const p: Record<string, string> = {

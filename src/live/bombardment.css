@@ -1,0 +1,54 @@
+.bombardment-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 12;
+}
+.bombardment-zones {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.bombardment-cell {
+  fill: rgba(230, 29, 47, 0.25);
+}
+.bombardment-center {
+  fill: rgba(255, 30, 45, 0.52);
+  stroke: #ffe6cf;
+  stroke-width: 2;
+  stroke-dasharray: 5 3;
+}
+.bombardment-border {
+  fill: none;
+  stroke: #ff463e;
+  stroke-width: 3;
+  stroke-linecap: square;
+  filter: drop-shadow(0 0 3px #ff3227);
+}
+.bombardment-label {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  background: #7f1522;
+  color: #fff0cf;
+  border: 1px solid #ff695a;
+  padding: 3px 7px;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px #25000088;
+}
+.bombardment-urgent {
+  animation: bombardment-pulse 0.8s steps(2, end) infinite;
+}
+@keyframes bombardment-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bombardment-urgent {
+    animation: none;
+  }
+}
