@@ -5,6 +5,10 @@ import {
   type BehaviorWeights,
   type ItemWeights,
 } from "./demonWeights";
+import {
+  defaultFreeItemWeights,
+  type FreeItemWeights,
+} from "./freeItem";
 import { boardAngle, DEFAULT_BOARD_ANGLE } from "./boardView";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { readModelConfig, type ModelConfig } from "./core";
@@ -23,6 +27,8 @@ export type LiveSettings = {
   demonChance: number;
   demonBehaviorWeights: BehaviorWeights;
   demonItemWeights: ItemWeights;
+  freeItem: boolean;
+  freeItemWeights: FreeItemWeights;
   commentaryRate: number;
   ai: boolean;
   persona: string;
@@ -48,6 +54,8 @@ function readControl(): Pick<
   | "demonChance"
   | "demonBehaviorWeights"
   | "demonItemWeights"
+  | "freeItem"
+  | "freeItemWeights"
   | "commentaryRate"
   | "ai"
 > {
@@ -80,6 +88,11 @@ function readControl(): Pick<
         v.demonItemWeights,
         defaultItemWeights,
       ),
+      freeItem: v.freeItem === true,
+      freeItemWeights: normalizeWeights(
+        v.freeItemWeights,
+        defaultFreeItemWeights,
+      ),
       demonChance: Number.isFinite(v.demonChance)
         ? Math.max(0, Math.min(100, Math.round(v.demonChance)))
         : 30,
@@ -97,6 +110,8 @@ function readControl(): Pick<
       demonChance: 30,
       demonBehaviorWeights: { ...defaultBehaviorWeights },
       demonItemWeights: { ...defaultItemWeights },
+      freeItem: false,
+      freeItemWeights: { ...defaultFreeItemWeights },
       commentaryRate: 35,
       ai: false,
     };
@@ -136,6 +151,8 @@ function persist(next: LiveSettings) {
         demonChance: next.demonChance,
         demonBehaviorWeights: next.demonBehaviorWeights,
         demonItemWeights: next.demonItemWeights,
+        freeItem: next.freeItem,
+        freeItemWeights: next.freeItemWeights,
         commentaryRate: next.commentaryRate,
         ai: next.ai,
       }),
@@ -195,6 +212,10 @@ export function useLiveSettings(editor = false) {
           next.demonItemWeights = normalizeWeights(
             next.demonItemWeights,
             defaultItemWeights,
+          );
+          next.freeItemWeights = normalizeWeights(
+            next.freeItemWeights,
+            defaultFreeItemWeights,
           );
           current.current = next;
           persist(next);

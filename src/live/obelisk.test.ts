@@ -239,6 +239,13 @@ it("shield hits are not reported as captures", () => {
   expect(move.isCapture()).toBe(false);
   expect(r.combatEvents.map((e) => e.kind)).toEqual(["attack", "shield"]);
 });
+it("marks a destroyed giant so reactions can name it", () => {
+  const g = new Chess("7k/8/8/8/8/8/8/K2R4 w - - 0 1"),
+    r = new DemonRules();
+  giant(g, r, "d5", 0);
+  const move = r.play(g, "d1d5") as { capturedKind?: "c" | "o" };
+  expect(move.capturedKind).toBe("o");
+});
 it("one giant produces one artillery target, not four", () => {
   const g = new Chess("7k/8/8/8/8/8/8/K7 b - - 0 1"),
     r = new DemonRules();

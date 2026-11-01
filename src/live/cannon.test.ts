@@ -86,6 +86,13 @@ describe("summon cannon", () => {
     expect(r.cannons.has(revive.target)).toBe(true);
     expect(r.lost.b).toEqual([]);
   });
+  it("marks a captured cannon so reactions can name it", () => {
+    const g = new Chess("7k/8/3r4/8/8/8/8/K2R4 w - - 0 1"),
+      r = new DemonRules();
+    r.cannons.add("d6");
+    const m = r.play(g, "d1d6") as { capturedKind?: "c" | "o" };
+    expect(m.capturedKind).toBe("c");
+  });
   it("AI can play a cannon without mutating the live state", async () => {
     const g = new Chess("7k/8/3r4/8/3p4/8/3R4/K7 b - - 0 1"),
       r = new DemonRules();
@@ -133,4 +140,27 @@ it("retains repetition detection with cannon moves", () => {
   for (let i = 0; i < 2; i++)
     for (const uci of ["d6e6", "a1b1", "e6d6", "b1a1"]) r.play(g, uci);
   expect(r.isDraw(g)).toBe(true);
+});
+
+it("summoning a cannon gives check and forces the opponent to answer", () => {
+  const g = new Chess("7k/8/8/8/3p4/8/3K4/R7 b - - 0 1"), r = new DemonRules();
+  const summon = r.specialActions(g).find(a => a.item === "summon-cannon" && a.target === "d6")!;
+  expect(summon).toBeDefined();
+  r.commitSpecial(g, summon);
+  expect(r.isCheck(g)).toBe(true);
+  expect(r.legalMoves(g).some(m => m.lan === "a1b1")).toBe(false);
+  expect(() => r.play(g, "a1b1")).toThrow();
+});
+it("moving a cannon gives check and marks it in the move record", () => {
+  const g = new Chess("7k/8/2r5/8/3p4/8/3K4/R7 b - - 0 1"), r = new DemonRules();
+  r.cannons.add("c6");
+  const move = r.play(g, "c6d6");
+  expect(r.isCheck(g)).toBe(true);
+  expect(move.san).toMatch(/\+$/);
+  expect(r.legalMoves(g).some(m => m.lan === "a1b1")).toBe(false);
+});
+it("two screens do not give cannon check", () => {
+  const g = new Chess("7k/8/3r4/8/3p4/3P4/3K4/8 w - - 0 1"), r = new DemonRules();
+  r.cannons.add("d6");
+  expect(r.isCheck(g)).toBe(false);
 });

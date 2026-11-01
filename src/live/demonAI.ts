@@ -8,7 +8,7 @@ import {
   type BehaviorWeights,
   type ItemWeights,
 } from "./demonWeights";
-import { Chess, type PieceSymbol } from "chess.js";
+import { Chess, type PieceSymbol, type Square } from "chess.js";
 import type { Analysis } from "../core/engine";
 import type { DemonAction } from "./demonFish";
 import type { StandardRules } from "./rules";
@@ -21,6 +21,17 @@ const values: Record<PieceSymbol, number> = {
   q: 900,
   k: 0,
 };
+/** Cannons and giants are stored as rooks; report their real material value. */
+function unitValue(
+  square: Square,
+  type: PieceSymbol,
+  rules: StandardRules,
+): number {
+  const giant = rules.giants.get(square);
+  if (giant) return 1200 + giant.shields * 180;
+  if (rules.cannons.has(square)) return 450;
+  return values[type];
+}
 export const DEMON_AI = "魔鱼游戏 AI · 本地搜索";
 
 /** Game utility, positive for black. This is not a Stockfish centipawn score. */
@@ -37,7 +48,12 @@ export function demonUtility(game: Chess, rules: StandardRules): number {
     const enemy = p.color === "b" ? "w" : "b";
     const cells = rules.giants.has(p.square) ? footprint(p.square) : [p.square];
     const attacked = cells.some((s) => rules.isAttacked(game, s, enemy));
-    const defended = rules.isAttacked(game, p.square, p.color);
+    const defended = cells.some((s) => rules.isAttacked(game, s, p.color));
+    const material = unitValue(p.square, p.type, rules);
+    // A shielded giant only risks its next shield when attacked; a shieldless
+    // giant (and every other unit) risks its full value being captured.
+    const giant = rules.giants.get(p.square);
+    const atRisk = giant ? (giant.shields > 0 ? 180 : 1200) : material;
     const center =
       7 -
       Math.abs(p.square.charCodeAt(0) - 100.5) -
@@ -47,17 +63,13 @@ export function demonUtility(game: Chess, rules: StandardRules): number {
     if (skill) value += sign * (skill.cooldown === 0 ? 180 : 60);
     value +=
       sign *
-      ((rules.giants.has(p.square)
-        ? 1200 + rules.giants.get(p.square)!.shields * 180
-        : rules.cannons.has(p.square)
-          ? 450
-          : values[p.type]) +
+      (material +
         (p.type === "k" ? 0 : center * 4) +
         (p.type === "p" ? advance * 9 : 0));
     if (attacked)
       value -=
         sign *
-        (p.type === "k" ? 70 : values[p.type] * (defended ? 0.08 : 0.35));
+        (p.type === "k" ? 70 : atRisk * (defended ? 0.08 : 0.35));
   }
   for (const shell of rules.bombardments) {
     for (const square of new Set(
@@ -72,7 +84,9 @@ export function demonUtility(game: Chess, rules: StandardRules): number {
           : 1200
         : p.type === "k"
           ? 3000
-          : values[p.type];
+          : rules.cannons.has(square)
+            ? 450
+            : values[p.type];
       value +=
         (p.color === "w" ? 1 : -1) *
         risk *

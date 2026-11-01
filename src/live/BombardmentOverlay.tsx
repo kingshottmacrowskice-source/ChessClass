@@ -85,7 +85,7 @@ export default function BombardmentOverlay({
             style={{ left: p.x, top: p.y - p.width * 0.35 }}
             aria-label={`副炮锁定${shell.target}，剩余${shell.remaining}步`}
           >
-            ⌖ {shell.target} · {shell.remaining}步后轰炸
+            {shell.target} · {shell.remaining}步后轰炸
           </span>
         );
       })}

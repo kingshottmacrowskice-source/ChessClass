@@ -3,6 +3,7 @@ import { Chess } from "chess.js";
 import {
   demonProviders,
   destroyCandidates,
+  doomCandidates,
   movementCandidates,
 } from "./demonFish";
 describe("demon fish rules", () => {
@@ -61,5 +62,14 @@ describe("demon fish rules", () => {
       (p) => p.kind === "item" || p.kind === "skill",
     ))
       expect(p.candidates(new Chess())).toEqual([]);
+  });
+  it("doom shroom keeps only the densest cluster and skips empty coverage", () => {
+    const clustered = new Chess("7k/8/8/1R1R4/2QQ4/8/8/K7 b - - 0 1");
+    const best = doomCandidates(clustered);
+    expect(best.length).toBe(1);
+    expect(best[0].target).toBe("c5");
+
+    const sparse = new Chess("7k/8/8/8/8/8/8/K7 b - - 0 1");
+    expect(doomCandidates(sparse)).toEqual([]);
   });
 });

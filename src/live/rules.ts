@@ -1,3 +1,4 @@
+import { itemLabels } from "./demonWeights";
 import { resolveDefenses } from "./defenses";
 import {
   Chess,
@@ -91,7 +92,7 @@ export class StandardRules {
       throw new Error("当前规则不允许该走法");
     return playUci(game, uci);
   }
-  specialActions(_game: Chess): DemonAction[] {
+  specialActions(_game: Chess, _forWhite = false): DemonAction[] {
     return [];
   }
   chooseMove(game: Chess, analysis: Analysis, difficulty: number): string {
@@ -108,6 +109,10 @@ export class StandardRules {
   }
   isGameOver(game: Chess): boolean {
     return this.isCheckmate(game) || this.isDraw(game);
+  }
+  /** Extra rules state beyond the FEN, for board snapshots and event streams. */
+  snapshot(_game: Chess): Record<string, unknown> {
+    return { mode: this.mode };
   }
 }
 
@@ -336,9 +341,9 @@ export class DemonRules extends StandardRules {
     if (createdLock)
       this.bombardments.push({
         target: createdLock,
-        color: "w",
+        color: before.turn() === "w" ? "b" : "w",
         remaining: 3,
-        tracking: game.get(createdLock)?.color === "w",
+        tracking: game.get(createdLock)?.color !== before.turn(),
       });
     const fields = before.fen().split(" "),
       side = before.turn();
@@ -460,7 +465,7 @@ export class DemonRules extends StandardRules {
         (m) => m.after,
         this.giants,
       ),
-      ...giantMoves(game, this.giants, this.craters),
+      ...giantMoves(game, this.giants, this.craters, this.cannons),
     ]);
   }
   private legalResult(game: Chess, move: Move): string | undefined {
@@ -506,20 +511,20 @@ export class DemonRules extends StandardRules {
       )
     ) {
       raw.captured = undefined;
+      (raw as Move & { capturedKind?: "c" | "o" }).capturedKind = undefined;
       raw.flags = raw.flags.replace("c", "").replace("e", "") || "n";
       raw.san += "（攻击未击破）";
       raw.promotion = undefined;
     }
+    if (this.isCheck(game)) raw.san += this.isCheckmate(game) ? "#" : "+";
     return raw;
   }
   isCheckmate(game: Chess): boolean {
     if (this.blastDraw) return false;
     if (this.winner) return true;
-    return (
-      this.isCheck(game) &&
-      !this.legalMoves(game).length &&
-      !this.specialActions(game).length
-    );
+    // Standard checkmate: the checked side has no legal move. Special actions
+    // resolve checks during play, but a true checkmate still ends the game.
+    return this.isCheck(game) && !this.legalMoves(game).length;
   }
   isDraw(game: Chess): boolean {
     if (this.blastDraw) return true;
@@ -554,16 +559,56 @@ export class DemonRules extends StandardRules {
     return legal.includes(proposed) ? proposed : bestmove;
   }
 
+  private whiteItemTemplates(game: Chess): DemonAction[] {
+    const actions: DemonAction[] = [];
+    const add = (
+      item: NonNullable<DemonAction["item"]>,
+      target: Square,
+      piece: PieceSymbol = "r",
+      cannon = false,
+    ) =>
+      actions.push({
+        kind: "item",
+        item,
+        target,
+        piece,
+        cannon,
+        before: game.fen(),
+        after: this.endOnly(game),
+        label: `${itemLabels[item]} · ${target}`,
+      });
+    for (const target of SQUARES) {
+      if (game.get(target)?.color === "b") add("londinium-artillery", target);
+      if (Number(target[1]) > 4 || game.get(target) || this.craters.has(target))
+        continue;
+      add("summon-cannon", target, "r", true);
+      add("doom-shroom", target, "p");
+      for (const piece of new Set(this.lost.w)) {
+        if (
+          piece === "k" ||
+          piece === "o" ||
+          (piece === "p" && target[1] === "1")
+        )
+          continue;
+        add(
+          "monster-reborn",
+          target,
+          piece === "c" ? "r" : piece,
+          piece === "c",
+        );
+      }
+    }
+    return actions;
+  }
   private endOnly(game: Chess): string {
     const f = game.fen().split(" ");
-    f[1] = "w";
+    f[1] = game.turn() === "b" ? "w" : "b";
     f[3] = "-";
     f[4] = String(Number(f[4]) + 1);
-    f[5] = String(Number(f[5]) + 1);
+    if (game.turn() === "b") f[5] = String(Number(f[5]) + 1);
     return f.join(" ");
   }
   private giantActionTemplates(game: Chess): DemonAction[] {
-    if (game.turn() !== "b") return [];
     const actions: DemonAction[] = [];
     const base = {
       kind: "item" as const,
@@ -571,7 +616,7 @@ export class DemonRules extends StandardRules {
       after: this.endOnly(game),
       piece: "r" as const,
     };
-    const plans = summonPlans(game, this.giants, this.craters, "b");
+    const plans = summonPlans(game, this.giants, this.craters, game.turn());
     if (plans.length)
       actions.push({
         ...base,
@@ -582,8 +627,8 @@ export class DemonRules extends StandardRules {
       });
     for (const [anchor, giant] of this.giants)
       if (
-        giant.color === "b" &&
-        tributeGroups(game, this.giants, "b", 2, anchor).length
+        giant.color === game.turn() &&
+        tributeGroups(game, this.giants, game.turn(), 2, anchor).length
       )
         actions.push({
           ...base,
@@ -593,13 +638,16 @@ export class DemonRules extends StandardRules {
           target: anchor,
           label: "欧贝利斯克 · 献祭两枚棋子，攻击前方两行",
         });
-    if (this.lost.b.includes("o"))
+    if (this.lost[game.turn()].includes("o"))
       for (const target of SQUARES) {
         const cells = footprint(target);
         if (
           cells.length === 4 &&
           cells.every(
-            (s) => Number(s[1]) >= 5 && !game.get(s) && !this.craters.has(s),
+            (s) =>
+              (game.turn() === "b" ? Number(s[1]) >= 5 : Number(s[1]) <= 4) &&
+              !game.get(s) &&
+              !this.craters.has(s),
           )
         )
           actions.push({
@@ -627,7 +675,7 @@ export class DemonRules extends StandardRules {
         (s) =>
           this.unitAt(s) === s &&
           s !== action.from &&
-          game.get(s)?.color === "b" &&
+          game.get(s)?.color === game.turn() &&
           game.get(s)?.type !== "k",
       )
     );
@@ -641,17 +689,17 @@ export class DemonRules extends StandardRules {
       return action;
     const candidates: { sacrifices: Square[]; targets: Square[] }[] =
       action.item === "summon-obelisk"
-        ? summonPlans(game, this.giants, this.craters, "b")
-        : tributeGroups(game, this.giants, "b", 2, action.from).map(
+        ? summonPlans(game, this.giants, this.craters, game.turn())
+        : tributeGroups(game, this.giants, game.turn(), 2, action.from).map(
             (sacrifices) => ({ sacrifices, targets: [action.target] }),
           );
+    // 献祭优先小兵：含兵更多的组合排前面，先被选中。
+    const pawns = (squares: Square[]) =>
+      squares.reduce((n, s) => n + (game.get(s)?.type === "p" ? 1 : 0), 0);
+    candidates.sort((a, b) => pawns(b.sacrifices) - pawns(a.sacrifices));
     // Choose costs first, then a placement; only legal outcomes enter the lottery.
     while (candidates.length) {
-      const index = Math.min(
-        candidates.length - 1,
-        Math.floor(random() * candidates.length),
-      );
-      const plan = candidates.splice(index, 1)[0],
+      const plan = candidates.shift()!,
         targets = [...plan.targets];
       while (targets.length) {
         const at = Math.min(
@@ -663,19 +711,24 @@ export class DemonRules extends StandardRules {
         const r = this.fork(),
           copy = new Chess(game.fen());
         r.executeSpecial(copy, selected);
-        if (r.winner || r.blastDraw || !inCheck(copy, "b", r.cannons, r.giants))
+        if (
+          r.winner ||
+          r.blastDraw ||
+          !inCheck(copy, game.turn(), r.cannons, r.giants)
+        )
           return { ...selected, after: copy.fen(), baseAfter: undefined };
       }
     }
     throw new Error("没有合法的献祭结果");
   }
 
-  specialActions(game: Chess): DemonAction[] {
-    if (game.turn() !== "b" || this.winner || this.blastDraw) return [];
+  specialActions(game: Chess, forWhite = false): DemonAction[] {
+    if ((game.turn() !== "b" && !forWhite) || this.winner || this.blastDraw)
+      return [];
     const stoneActions: DemonAction[] = unitSquares(game, this.giants).flatMap(
       (s) => {
         const p = game.get(s)!;
-        return p.color === "b" &&
+        return p.color === game.turn() &&
           ["k", "q", "r", "b"].includes(p.type) &&
           !this.cannons.has(s) &&
           !this.giants.has(s) &&
@@ -694,22 +747,23 @@ export class DemonRules extends StandardRules {
           : [];
       },
     );
-    const ordinary = demonProviders
-      .flatMap((p) =>
-        p.candidates(
-          game,
-          this.lost.b.filter((v): v is PieceSymbol | "c" => v !== "o"),
-          () => false,
-        ),
-      )
-      .filter(
-        (a) =>
-          !this.craters.has(a.target) &&
-          !(
-            a.from &&
-            (this.cannons.has(a.from) || giantAt(this.giants, a.from))
-          ),
-      );
+    const ordinary = (
+      game.turn() === "w"
+        ? this.whiteItemTemplates(game)
+        : demonProviders.flatMap((p) =>
+            p.candidates(
+              game,
+              this.lost[game.turn()].filter(
+                (v): v is PieceSymbol | "c" => v !== "o",
+              ),
+              () => false,
+            ),
+          )
+    ).filter(
+      (a) =>
+        !this.craters.has(a.target) &&
+        !(a.from && (this.cannons.has(a.from) || giantAt(this.giants, a.from))),
+    );
     const canonical = ordinary
       .map((a) =>
         a.kind === "destroy" || a.item === "londinium-artillery"
@@ -753,7 +807,7 @@ export class DemonRules extends StandardRules {
         if (
           !r.winner &&
           !r.blastDraw &&
-          inCheck(copy, "b", r.cannons, r.giants)
+          inCheck(copy, game.turn(), r.cannons, r.giants)
         )
           return [];
         return [{ ...action, after: copy.fen() }];
@@ -768,7 +822,7 @@ export class DemonRules extends StandardRules {
         throw new Error("献祭棋子不合法");
       if (
         action.skill &&
-        (!action.from || this.giants.get(action.from)?.color !== "b")
+        (!action.from || this.giants.get(action.from)?.color !== game.turn())
       )
         throw new Error("主动技能来源不存在");
       for (const s of action.sacrifices!) this.breakPiece(game, s, "献祭");
@@ -777,20 +831,23 @@ export class DemonRules extends StandardRules {
         if (
           cells.length !== 4 ||
           cells.some(
-            (s) => Number(s[1]) < 5 || game.get(s) || this.craters.has(s),
+            (s) =>
+              (game.turn() === "b" ? Number(s[1]) < 5 : Number(s[1]) > 4) ||
+              game.get(s) ||
+              this.craters.has(s),
           )
         )
           throw new Error("召唤位置不可用");
-        this.spawnGiant(game, action.target, "b", "summon-item");
+        this.spawnGiant(game, action.target, game.turn(), "summon-item");
       } else {
         const source = action.from!,
-          rows = skillRows(source, "b");
+          rows = skillRows(source, game.turn());
         this.attackArea(
           game,
           SQUARES.filter((s) => rows.includes(Number(s[1]))),
           source,
           "欧贝利斯克主动技能",
-          "w",
+          game.turn() === "w" ? "b" : "w",
         );
       }
     } else if (action.kind === "destroy") {
@@ -811,40 +868,49 @@ export class DemonRules extends StandardRules {
       if (game.get(action.target)) throw new Error("毁灭菇落点已被占用");
       // A rook placeholder permits deployment on rank eight; it is removed
       // before the action ends and never contributes a rook to the graveyard.
-      game.put({ type: "r", color: "b" }, action.target);
+      game.put({ type: "r", color: game.turn() }, action.target);
       this.temporaryPieces.add(action.target);
       const area = bombardmentArea(action.target).filter(
         (s) => s !== action.target && game.get(s)?.type !== "k",
       );
-      this.attackArea(game, area, action.target, "毁灭菇爆炸", "w");
+      this.attackArea(
+        game,
+        area,
+        action.target,
+        "毁灭菇爆炸",
+        game.turn() === "w" ? "b" : "w",
+      );
       if (this.temporaryPieces.has(action.target)) {
         this.breakPiece(game, action.target, "毁灭菇自我消除");
         this.craters.add(action.target);
       }
     } else if (action.item === "monster-reborn") {
       const kind = action.giant ? "o" : action.cannon ? "c" : action.piece,
-        index = this.lost.b.indexOf(kind);
+        index = this.lost[game.turn()].indexOf(kind);
       if (index < 0) throw new Error("没有可复活的棋子");
       if (action.giant) {
         const cells = footprint(action.target);
         if (
           cells.length !== 4 ||
           cells.some(
-            (s) => game.get(s) || this.craters.has(s) || Number(s[1]) < 5,
+            (s) =>
+              game.get(s) ||
+              this.craters.has(s) ||
+              (game.turn() === "b" ? Number(s[1]) < 5 : Number(s[1]) > 4),
           )
         )
           throw new Error("复活位置不可用");
-        this.spawnGiant(game, action.target, "b", "other");
+        this.spawnGiant(game, action.target, game.turn(), "other");
       } else {
-        game.put({ type: action.piece, color: "b" }, action.target);
+        game.put({ type: action.piece, color: game.turn() }, action.target);
         if (action.cannon) this.cannons.add(action.target);
       }
-      this.lost.b.splice(index, 1);
+      this.lost[game.turn()].splice(index, 1);
     } else if (action.item === "summon-cannon") {
-      game.put({ type: "r", color: "b" }, action.target);
+      game.put({ type: "r", color: game.turn() }, action.target);
       this.cannons.add(action.target);
     } else if (action.item === "tingqiao-stone") {
-      this.listening.set(action.target, { color: "b", cooldown: 0 });
+      this.listening.set(action.target, { color: game.turn(), cooldown: 0 });
     }
     this.finishAction(
       game,
@@ -854,8 +920,7 @@ export class DemonRules extends StandardRules {
     );
   }
   commitSpecial(game: Chess, action: DemonAction): void {
-    if (game.fen() !== action.before || game.turn() !== "b")
-      throw new Error("特殊行动已过期");
+    if (game.fen() !== action.before) throw new Error("特殊行动已过期");
     let allowed: DemonAction | undefined;
     if (action.item === "summon-obelisk" || action.skill === "obelisk-fury") {
       if (
@@ -870,7 +935,7 @@ export class DemonRules extends StandardRules {
       if (!this.sacrificesValid(game, action)) throw new Error("无效献祭");
       allowed = action;
     } else
-      allowed = this.specialActions(game).find(
+      allowed = this.specialActions(game, true).find(
         (a) =>
           a.kind === action.kind &&
           a.item === action.item &&
@@ -891,10 +956,25 @@ export class DemonRules extends StandardRules {
       copy.fen() !== action.after ||
       (!test.winner &&
         !test.blastDraw &&
-        inCheck(copy, "b", test.cannons, test.giants))
+        inCheck(copy, game.turn(), test.cannons, test.giants))
     )
       throw new Error("特殊行动结果无效");
     this.executeSpecial(game, allowed);
+  }
+  /** Demon-only state that the FEN cannot represent; surfaced in board snapshots. */
+  snapshot(_game: Chess): Record<string, unknown> {
+    return {
+      mode: this.mode,
+      giants: [...this.giants].map(([square, g]) => ({ square, ...g })),
+      cannons: [...this.cannons],
+      craters: [...this.craters],
+      listening: [...this.listening].map(([square, l]) => ({ square, ...l })),
+      bombardments: this.bombardments.map((b) => ({ ...b })),
+      lostWhite: [...this.lost.w],
+      lostBlack: [...this.lost.b],
+      winner: this.winner ?? null,
+      blastDraw: this.blastDraw,
+    };
   }
 }
 export const standardRules = new StandardRules();

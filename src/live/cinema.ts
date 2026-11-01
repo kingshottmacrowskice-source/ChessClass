@@ -1,5 +1,5 @@
-/** Board-camera finishers: a promotion close-up and a king's execution. */
-export type CinemaKind = "promotion" | "checkmate";
+/** Board-camera finishers: a promotion close-up, a king's execution and two reactions. */
+export type CinemaKind = "promotion" | "checkmate" | "obelisk" | "tingqiao";
 export type CinemaPhase =
   | "lead"
   | "charge"
@@ -23,6 +23,11 @@ export type Cue =
   | "dread"
   | "slash"
   | "aftermath"
+  // obelisk
+  | "emerge"
+  // tingqiao
+  | "counter"
+  | "rebound"
   // both
   | "settle";
 export type Step = { phase: CinemaPhase; ms: number; cue?: Cue };
@@ -36,8 +41,10 @@ export type CinemaShow = {
   square: string;
   /** Piece a promoting pawn becomes. */
   promo?: string;
-  /** The mated king's square. */
+  /** The mated king's square, or the counter-broken attacker's square. */
   victim?: string;
+  /** The counter-broken attacker's piece type (tingqiao), when it matters. */
+  victimType?: string;
   detail?: string;
 };
 /** What the overlay and the close-up cast are showing right now. */
@@ -49,6 +56,8 @@ export const cinemaCopy: Record<
 > = {
   promotion: { sub: "PROMOTION", tag: "升变", caption: "小兵觉醒" },
   checkmate: { sub: "CHECKMATE", tag: "斩杀", caption: "王 · 就此终结" },
+  obelisk: { sub: "OBELISK", tag: "巨神兵", caption: "欧贝利斯克 · 降临" },
+  tingqiao: { sub: "TINGQIAO", tag: "听桥", caption: "以静制动 · 反击" },
 };
 
 /**
@@ -70,6 +79,20 @@ export function script(kind: CinemaKind): Step[] {
       { phase: "ascend", ms: 1300, cue: "rise" },
       { phase: "ascend", ms: 300, cue: "inhale" },
       { phase: "reveal", ms: 1500, cue: "swap" },
+      { phase: "out", ms: 820, cue: "settle" },
+    ];
+  if (kind === "obelisk")
+    return [
+      // The soft dolly already framed the front; the giant grows out of the floor.
+      { phase: "ascend", ms: 1700, cue: "emerge" },
+      { phase: "reveal", ms: 900 },
+      { phase: "out", ms: 820, cue: "settle" },
+    ];
+  if (kind === "tingqiao")
+    return [
+      // Snap to the guardian, then rebound the attacker off its hidden counter.
+      { phase: "charge", ms: 420, cue: "counter" },
+      { phase: "strobe", ms: 860, cue: "rebound" },
       { phase: "out", ms: 820, cue: "settle" },
     ];
   return [

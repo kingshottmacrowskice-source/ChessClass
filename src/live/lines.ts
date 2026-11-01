@@ -163,6 +163,7 @@ export function moveReaction(m: {
   color: string;
   piece: string;
   captured?: string;
+  capturedKind?: "c" | "o";
   to: string;
   san: string;
 }) {
@@ -197,14 +198,27 @@ export function moveReaction(m: {
         h: "エイチ",
       })[c]!,
   );
+  // Cannons and giants are stored as rooks; name them by their real identity.
+  const capturedLabel =
+    m.capturedKind === "c"
+      ? "炮"
+      : m.capturedKind === "o"
+        ? "巨神兵"
+        : pieceName[m.captured || m.piece];
+  const capturedJa =
+    m.capturedKind === "c"
+      ? "カノン"
+      : m.capturedKind === "o"
+        ? "オベリスク"
+        : japanesePieces[m.captured || m.piece];
   const vars = {
-    piece: pieceName[m.captured || m.piece],
+    piece: capturedLabel,
     square: m.to,
     san: m.san,
   };
   const text = line(kind, vars);
   const jaVars: Record<string, string> = {
-    piece: japanesePieces[m.captured || m.piece],
+    piece: capturedJa,
     square,
     san: /^O-O-O/.test(m.san)
       ? "クイーンサイドにキャスリング"

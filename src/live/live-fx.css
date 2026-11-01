@@ -21,6 +21,62 @@
 .fx-piece-art .pixel-chess-art {
   filter: sepia(0.55) brightness(0.95) drop-shadow(0 2px 0 #432b1e88);
 }
+/* 道具沿用与棋子相同的手感：硬边、米色描边阴影。 */
+.item-sprite {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 2px 0 #432b1e88);
+}
+.item-sprite svg {
+  width: 100%;
+  height: 100%;
+}
+.item-cannon .pixel-chess-art {
+  filter: sepia(0.55) brightness(0.95) drop-shadow(0 2px 0 #432b1e88);
+}
+.item-canvas-art {
+  display: block;
+  image-rendering: pixelated;
+}
+/* 听桥技能石：就绪时微微发光，冷却时压暗并在角上标剩余回合。 */
+.listening-badge {
+  position: absolute;
+  transform: translateX(-50%);
+  z-index: 16;
+  pointer-events: none;
+  display: grid;
+  place-items: end center;
+  filter: drop-shadow(0 2px 0 #0b1a1f88);
+}
+.listening-badge.ready {
+  animation: listening-ready 1.8s steps(2) infinite;
+}
+.listening-badge.cooling > .item-sprite {
+  filter: grayscale(0.7) brightness(0.6) drop-shadow(0 2px 0 #432b1e88);
+}
+.listening-badge > b {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  font: 900 9px/1 "Courier New", monospace;
+  color: #bcffff;
+  background: #174d59;
+  border: 1px solid #72d9ef;
+  padding: 1px 3px;
+}
+@keyframes listening-ready {
+  50% {
+    filter: drop-shadow(0 0 2px #ffd36a);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .listening-badge.ready {
+    animation: none;
+  }
+}
 .fx-shadow {
   position: absolute;
   left: 17%;
@@ -517,3 +573,5 @@
     display: none;
   }
 }
+
+.listening-badge > .item-sprite { width:100%; height:100%; object-fit:contain; image-rendering:pixelated; }

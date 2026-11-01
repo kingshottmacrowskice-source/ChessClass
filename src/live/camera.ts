@@ -88,6 +88,7 @@ export class CameraRig {
   private trauma = 0;
   private hand = 0;
   private last = 0;
+  private soft = false;
   get active() {
     return this.host !== null;
   }
@@ -96,13 +97,27 @@ export class CameraRig {
     return { ...this.base };
   }
   attach(host: HTMLElement) {
+    // A soft dolly can hand straight into the finisher: keep its framing.
+    const keep = this.soft && this.host === host ? { ...this.base } : null;
     this.detach();
     this.host = host;
+    this.soft = false;
     this.spacer = document.createElement("div");
     this.spacer.style.height = `${host.offsetHeight}px`;
     this.spacer.setAttribute("aria-hidden", "true");
     host.before(this.spacer);
     host.classList.add("camera-on");
+    this.base = keep ?? this.home();
+    this.write(this.base);
+    this.last = performance.now();
+    this.frame = requestAnimationFrame(this.tick);
+  }
+  /** A non-fullscreen dolly: the board keeps its place and the actor stays visible. */
+  softAttach(host: HTMLElement) {
+    this.detach();
+    this.host = host;
+    this.soft = true;
+    host.classList.add("camera-soft");
     this.base = this.home();
     this.write(this.base);
     this.last = performance.now();
@@ -197,9 +212,11 @@ export class CameraRig {
     this.base = this.home();
     this.write(this.base);
     this.host?.classList.remove("camera-on");
+    this.host?.classList.remove("camera-soft");
     this.host = null;
     this.spacer?.remove();
     this.spacer = null;
+    this.soft = false;
   }
 }
 let current: CameraRig | null = null;

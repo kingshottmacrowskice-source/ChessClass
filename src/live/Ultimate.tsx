@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { CinemaShow } from "./cinema";
 
-export type UltimateKind = "promotion" | "checkmate";
+export type UltimateKind = "promotion" | "checkmate" | "obelisk" | "tingqiao";
 export type UltimateShow = {
   id: number;
   kind: UltimateKind;
@@ -16,6 +16,8 @@ const CUT_MS = 3400;
 const titles: Record<UltimateKind, { big: string; sub: string }> = {
   promotion: { big: "升变！", sub: "PROMOTION" },
   checkmate: { big: "将死！", sub: "CHECKMATE" },
+  obelisk: { big: "巨神兵！", sub: "OBELISK" },
+  tingqiao: { big: "听桥！", sub: "TINGQIAO" },
 };
 
 /** Full-screen finisher: a supplied video when present, otherwise a pixel cut-in. */

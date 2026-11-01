@@ -24,6 +24,35 @@ function SculptedPiece({
   const paint = `url(#${id}-body)`;
   const rim = `url(#${id}-rim)`;
   const edge = white ? "#796b52" : "#080e19";
+  if (type === "c") {
+    const ink = white ? "#b52324" : "#202025";
+    return (
+      <svg className="sculpted-piece-art" viewBox="0 0 100 120" role="img"
+        aria-label={(white ? "红" : "黑") + "炮"}>
+        <defs>
+          <linearGradient id={`${id}-wood`} x1="0" y1="0" x2="0" y2="1">
+            <stop stopColor="#fff0c4" />
+            <stop offset="1" stopColor="#d7ab66" />
+          </linearGradient>
+          <linearGradient id={`${id}-side`} x1="0" y1="0" x2="1" y2="0">
+            <stop stopColor="#946132" />
+            <stop offset=".4" stopColor="#d6a45b" />
+            <stop offset="1" stopColor="#805029" />
+          </linearGradient>
+        </defs>
+        <path d="M6 77 V92 A44 25 0 0 0 94 92 V77Z"
+          fill={`url(#${id}-side)`} stroke="#714b2b" strokeWidth="2" />
+        <path d="M8 94 Q50 124 92 94" fill="none" stroke="#e5ba78" strokeWidth="2" />
+        <ellipse cx="50" cy="77" rx="44" ry="29" fill={`url(#${id}-wood)`}
+          stroke="#80552e" strokeWidth="2" />
+        <ellipse cx="50" cy="77" rx="37" ry="23" fill="none" stroke={ink} strokeWidth="1.7" />
+        <text x="50" y="50" textAnchor="middle" dominantBaseline="central"
+          transform="translate(0 43) scale(1 .68)"
+          fontFamily="KaiTi, STKaiti, SimSun, serif" fontSize="49" fontWeight="bold"
+          fill={ink}>炮</text>
+      </svg>
+    );
+  }
   return (
     <svg
       className="sculpted-piece-art"
@@ -65,28 +94,6 @@ function SculptedPiece({
       <g stroke={edge} strokeWidth="1.2" strokeLinejoin="round">
         <path d="M29 89 Q40 77 40 58 L60 58 Q60 77 71 89Z" fill={paint} />
         <ellipse cx="50" cy="61" rx="17" ry="5" fill={rim} />
-        {type === "o" && (
-          <g stroke="#102442" strokeWidth="2">
-            <path d="M28 82L22 48L9 41L6 56L15 78L28 86ZM72 82L78 48L91 41L94 56L85 78L72 86Z" fill="#2862aa"/>
-            <path d="M24 43L37 32H63L76 43L67 76H33Z" fill="#387ed1"/>
-            <path d="M35 28L26 8L43 21H57L74 8L65 28L62 42H38Z" fill="#528ee0"/>
-            <path d="M37 27H46V32H37ZM54 27H63V32H54Z" fill="#ff525d"/>
-            <path d="M45 37H55V41H45Z" fill="#182641"/>
-            <path d="M35 49H65V57H35ZM40 61H60V69H40Z" fill="#79b6ed"/>
-            <path d="M32 75H48L45 101H27ZM52 75H68L73 101H55Z" fill="#204e90"/>
-            <path d="M23 99H46V108H20ZM54 99H77L80 108H54Z" fill="#4280bd"/>
-            <path d="M8 54H22V76H8ZM78 54H92V76H78Z" fill="#75b5df"/>
-          </g>
-        )}
-        {type === "c" && (
-          <g>
-            <path d="M24 81 L30 42 L70 42 L76 81Z" fill={paint} />
-            <ellipse cx="50" cy="42" rx="20" ry="10" fill={rim} />
-            <ellipse cx="50" cy="42" rx="12" ry="6" fill="#080e19" />
-            <path d="M28 62H72V69H28Z" fill="#bb8a42" />
-            <path d="M34 72H66V83H34Z" fill={rim} />
-          </g>
-        )}
         {type === "p" && (
           <>
             <path d="M36 57 Q50 49 64 57 L65 62 Q50 68 35 62Z" fill={paint} />
@@ -195,6 +202,14 @@ function SculptedPiece({
   );
 }
 
+/**
+ * Raster grid per piece. Ordinary pieces keep the 32×40 sheet the board was tuned
+ * around; the Obelisk spans four cells and fills the frame in close-ups, so it gets
+ * the supplied pixel artwork at its native resolution to preserve its pixel clusters.
+ */
+const RASTER: Record<string, [number, number]> = { o: [1254, 1254], c: [64, 80] };
+const rasterOf = (type: string) => RASTER[type] ?? [32, 40];
+
 // Rasterize the sculpted forms on a deliberate pixel grid; keep characters high resolution.
 export default function ChessPiece({
   type,
@@ -205,6 +220,7 @@ export default function ChessPiece({
 }) {
   const source = useRef<HTMLSpanElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
+  const [width, height] = rasterOf(type);
   useEffect(() => {
     const svg = source.current?.querySelector("svg")?.cloneNode(true) as
       SVGElement | undefined;
@@ -213,7 +229,7 @@ export default function ChessPiece({
     svg.setAttribute("width", "100");
     svg.setAttribute("height", "120");
     svg.querySelector(".piece-contact-shadow")?.remove();
-    const url = URL.createObjectURL(
+    const url = type === "o" ? `${import.meta.env.BASE_URL}assets/characters/obelisk-user-frost-knight.png` : URL.createObjectURL(
       new Blob([new XMLSerializer().serializeToString(svg)], {
         type: "image/svg+xml",
       }),
@@ -224,34 +240,40 @@ export default function ChessPiece({
       if (!active) return;
       const ctx = canvas.current?.getContext("2d");
       if (!ctx) return;
-      ctx.clearRect(0, 0, 32, 40);
-      ctx.drawImage(image, 0, 0, 32, 40);
-      const pixels = ctx.getImageData(0, 0, 32, 40);
-      for (let i = 0; i < pixels.data.length; i += 4) {
+      ctx.clearRect(0, 0, width, height);
+      ctx.imageSmoothingEnabled = type !== "o";
+      ctx.drawImage(image, 0, 0, width, height);
+      const pixels = ctx.getImageData(0, 0, width, height);
+      // Generated pixel art already has its intended palette and transparency.
+      for (let i = 0; type !== "o" && i < pixels.data.length; i += 4) {
         pixels.data[i + 3] = pixels.data[i + 3] < 100 ? 0 : 255;
+        // 量化到 16 级：粗栅格下就是分明的色阶，细栅格下保留柔和过渡。
         for (let c = 0; c < 3; c++)
           pixels.data[i + c] = Math.round(pixels.data[i + c] / 16) * 16;
       }
       ctx.putImageData(pixels, 0, 0);
       let bottom = 0;
-      for (let y = 0; y < 40; y++) {
-        for (let x = 0; x < 32; x++) {
-          if (pixels.data[(y * 32 + x) * 4 + 3]) bottom = y + 1;
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          if (pixels.data[(y * width + x) * 4 + 3]) bottom = y + 1;
         }
       }
       // Anchor the floor shadow to visible pixels, not transparent canvas padding.
       canvas.current
         ?.closest<HTMLElement>(".standing-piece")
-        ?.style.setProperty("--piece-bottom", `${(bottom / 40) * 100}%`);
-      canvas.current?.setAttribute("data-pixel-bottom", String(bottom));
+        ?.style.setProperty("--piece-bottom", `${(bottom / height) * 100}%`);
+      canvas.current?.setAttribute(
+        "data-pixel-bottom",
+        String((bottom / height) * 40),
+      );
       canvas.current?.setAttribute("data-loaded", "true");
     };
     image.src = url;
     return () => {
       active = false;
-      URL.revokeObjectURL(url);
+      if (type !== "o") URL.revokeObjectURL(url);
     };
-  }, [type, color]);
+  }, [type, color, width, height]);
   return (
     <>
       <span hidden ref={source} aria-hidden="true">
@@ -259,8 +281,8 @@ export default function ChessPiece({
       </span>
       <canvas
         ref={canvas}
-        width={32}
-        height={40}
+        width={width}
+        height={height}
         className="pixel-chess-art"
         role="img"
         aria-label={(color === "w" ? "白" : "黑") + (names[type] || "兵")}

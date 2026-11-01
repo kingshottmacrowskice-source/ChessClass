@@ -1,5 +1,5 @@
 import { giantAt, type Giants } from "./obelisk";
-import { PIECE_FORWARD_OFFSET } from "./boardView";
+import { OBELISK_Z_OFFSET, PIECE_FORWARD_OFFSET } from "./boardView";
 import { useLayoutEffect, useRef, useState } from "react";
 import * as T from "three";
 import { Chess, type Move } from "chess.js";
@@ -13,7 +13,12 @@ import type { Beat, CinemaShow } from "./cinema";
 import { movingFrom } from "./transition";
 import "./three-board.css";
 import ChessPiece from "./ChessPiece";
+import ItemCanvas from "./ItemCanvas";
+import { ITEM_ART_COLOR, ITEM_BOARD_WIDTH, sprites, type GridSpriteName } from "./itemSprites";
 import { createPostFX } from "./boardPostFX";
+
+/** 巨神兵贴图整体缩放：原 2.35，改为原来的 1.6 倍。 */
+const OBELISK_SCALE = 2.35 * 1.6;
 
 type Props = {
   fen: string;
@@ -90,8 +95,17 @@ export default function ThreeBoard(props: Props) {
     shadowTexture.colorSpace = T.SRGBColorSpace;
     // Reuse the original pixel artwork. Only the board is solid geometry.
     const pieceTextures = new Map<string, T.CanvasTexture>();
+    /**
+     * Items share the `[data-art]` channel: colour `i` plus the item name. The
+     * summoned cannon is an ordinary Chinese cannon (ChessPiece `c`), so it points
+     * at the chess texture instead of a grid sprite.
+     */
+    const artKey = (type: string, color: string) =>
+      color === ITEM_ART_COLOR && type === "summon-cannon"
+        ? "bc"
+        : color + type;
     const piece = (type: string, color: string) => {
-      const key = color + type;
+      const key = artKey(type, color);
       let texture = pieceTextures.get(key);
       if (!texture) {
         const source = host.querySelector<HTMLCanvasElement>(
@@ -99,14 +113,22 @@ export default function ThreeBoard(props: Props) {
         )!;
         texture = new T.CanvasTexture(source);
         texture.colorSpace = T.SRGBColorSpace;
-        texture.magFilter = T.NearestFilter;
-        texture.minFilter = T.NearestFilter;
-        texture.generateMipmaps = false;
+        // The Obelisk artwork is a detailed render, not pixel art: smooth it.
+        texture.magFilter = type === "o" ? T.LinearFilter : T.NearestFilter;
+        texture.minFilter = type === "o" ? T.LinearFilter : T.NearestFilter;
+        texture.generateMipmaps = type === "o";
         pieceTextures.set(key, texture);
       }
+      // Grid items are wide or squat, so they keep their canvas aspect ratio and
+      // keep the same width on the board instead of the tall chess-piece billboard.
+      const source = texture.image as HTMLCanvasElement;
+      const gridItem = color === ITEM_ART_COLOR && type !== "summon-cannon";
+      const aspect = source.width / source.height;
+      const width = gridItem ? ITEM_BOARD_WIDTH : 0.86;
+      const height = gridItem || type === "o" ? width / aspect : 1.075;
       const group = new T.Group();
       const art = new T.Mesh(
-        new T.PlaneGeometry(0.86, 1.075),
+        new T.PlaneGeometry(width, height),
         new T.MeshBasicMaterial({
           map: texture,
           toneMapped: false,
@@ -116,8 +138,11 @@ export default function ThreeBoard(props: Props) {
         }),
       );
       art.layers.set(1);
-      art.userData.height = 1.075;
+      art.userData.height = height;
       art.userData.texture = texture;
+      art.userData.bottomRatio = gridItem
+        ? Number(source.dataset.pixelRatio || 1)
+        : undefined;
       art.userData.billboard = true;
       group.add(art);
       const shadow = new T.Mesh(
@@ -275,10 +300,14 @@ export default function ThreeBoard(props: Props) {
     const transientPieces = new Map<string, T.Group>();
     const cast = new T.Group();
     scene.add(cast);
+    // 巨神兵地面范围（蓝框）：画在地面层，让巨神兵贴图（billboard 层）自然盖住它。
+    const giantMarks = new T.Group();
+    scene.add(giantMarks);
     let width = 1,
       height = 1,
       pose = boardHome(latest.current.boardAngle),
       signature = "",
+      giantSignature = "",
       frame = 0,
       lastNow = 0,
       phase = "",
@@ -369,6 +398,7 @@ export default function ThreeBoard(props: Props) {
       const home = boardHome(latest.current.boardAngle);
       if (
         !host.classList.contains("camera-on") &&
+        !host.classList.contains("camera-soft") &&
         pose.elevation !== home.elevation
       )
         applyPose(home);
@@ -386,7 +416,10 @@ export default function ThreeBoard(props: Props) {
       );
       actorTexture.repeat.x = latest.current.facing;
       actorTexture.offset.x = latest.current.facing < 0 ? 1 : 0;
-      actorSprite.visible = !host.classList.contains("camera-on");
+      // The Obelisk rises behind the actor, so keep her in shot during its finisher.
+      actorSprite.visible =
+        !host.classList.contains("camera-on") ||
+        latest.current.show?.kind === "obelisk";
       const p = latest.current,
         show = p.show && p.beat.phase !== "lead" ? p.show : undefined;
       const dt = Math.min(0.05, Math.max(0, now - lastNow) / 1000);
@@ -409,9 +442,9 @@ export default function ThreeBoard(props: Props) {
       const entries = cachedPieces
         .filter(
           (v) =>
+            !show &&
             !(p.giants && giantAt(p.giants,v.square) && !p.giants.has(v.square)) &&
-            !p.hidden.includes(v.square) &&
-            (!show || (v.square !== show.square && v.square !== show.victim)),
+            !p.hidden.includes(v.square),
         )
         .map((v) => ({
           square: String(v.square),
@@ -426,7 +459,7 @@ export default function ThreeBoard(props: Props) {
           type: p.beat.swapped ? show.promo || show.hero : show.hero,
           color: show.by,
         });
-        if (show.victim)
+        if (show.kind === "checkmate" && show.victim)
           entries.push({
             square: show.victim,
             type: "k",
@@ -486,8 +519,8 @@ export default function ThreeBoard(props: Props) {
           obj.position.y =
             Math.sin(p.progress * Math.PI) * (e.type === "n" ? 0.35 : 0.07);
         }
-        if(e.type === "o") { obj.position.x += .5; obj.position.z -= .5; obj.scale.setScalar(2); }
-        if (show?.square === e.square) {
+        if(e.type === "o") { obj.position.x += .5; obj.position.z += OBELISK_Z_OFFSET; obj.scale.setScalar(OBELISK_SCALE); }
+        if (show?.square === e.square && show.kind === "promotion") {
           const ease = (t: number) => 1 - (1 - Math.min(1, t)) ** 3;
           if (p.beat.phase === "ascend")
             // Lift off slowly, then hang and tremble as the power builds.
@@ -495,7 +528,7 @@ export default function ThreeBoard(props: Props) {
               ease((now - phaseAt) / 1100) * 0.34 +
               Math.sin(now * 0.005) * 0.03 +
               (Math.random() - 0.5) * 0.012 * ease((now - phaseAt) / 1600);
-          else if (show.kind === "promotion" && swappedAt)
+          else if (swappedAt)
             // The new piece lands with weight: drop, then a small bounce.
             obj.position.y =
               0.34 * Math.max(0, 1 - (now - swappedAt) / 260) +
@@ -504,6 +537,21 @@ export default function ThreeBoard(props: Props) {
               ) *
                 0.05 *
                 Math.max(0, 1 - (now - swappedAt) / 520);
+        }
+        // Obelisk summon: the giant grows out of the floor, hidden below until the shot.
+        if (
+          e.type === "o" &&
+          p.show?.kind === "obelisk" &&
+          p.show.square === e.square
+        ) {
+          const grow = 1 - (1 - Math.min(1, (now - phaseAt) / 1700)) ** 3;
+          if (p.beat.phase === "lead" || p.beat.phase === "charge") {
+            obj.position.y = -2.4;
+            obj.scale.setScalar(OBELISK_SCALE * 0.12);
+          } else if (p.beat.phase === "ascend") {
+            obj.position.y = (grow - 1) * 2.4;
+            obj.scale.setScalar(OBELISK_SCALE * (0.12 + 0.88 * grow));
+          }
         }
         if (
           show?.victim === e.square &&
@@ -595,6 +643,69 @@ export default function ThreeBoard(props: Props) {
               : 0,
         );
       });
+      // 地面震颤：巨神兵升起时，棋盘本身在其重量下轻微抖动。
+      const tremble =
+        show?.kind === "obelisk" &&
+        (p.beat.phase === "ascend" || p.beat.phase === "reveal");
+      tiles.forEach((tile, i) => {
+        const col = i % 8,
+          row = Math.floor(i / 8);
+        tile.position.y = tremble
+          ? -0.04 + Math.sin(now * 0.05 + (col + row) * 0.8) * 0.02
+          : -0.04;
+      });
+      // 巨神兵地面范围：随护盾状态重建蓝框（在地面层，不压巨神兵贴图）。
+      const giantKey = JSON.stringify(
+        [...(p.giants ?? [])].map(([s, g]) => [s, g.shields]),
+      );
+      if (giantKey !== giantSignature) {
+        giantSignature = giantKey;
+        for (const child of [...giantMarks.children]) {
+          if (child instanceof T.Mesh || child instanceof T.Line) {
+            child.geometry.dispose();
+            const m = child.material;
+            if (Array.isArray(m)) m.forEach((x) => x.dispose());
+            else m.dispose();
+          }
+        }
+        giantMarks.clear();
+        for (const [anchor, unit] of p.giants ?? []) {
+          const f = anchor.charCodeAt(0) - 97,
+            r = Number(anchor[1]),
+            cx = f - 3,
+            cz = 4 - r;
+          if (unit.shields > 0) {
+            const fill = new T.Mesh(
+              new T.PlaneGeometry(2, 2),
+              new T.MeshBasicMaterial({
+                color: 0x61bdff,
+                transparent: true,
+                opacity: 0.13,
+                depthWrite: false,
+              }),
+            );
+            fill.rotation.x = -Math.PI / 2;
+            fill.position.set(cx, 0.012, cz);
+            fill.renderOrder = 1;
+            giantMarks.add(fill);
+          }
+          const line = new T.LineLoop(
+            new T.BufferGeometry().setFromPoints([
+              new T.Vector3(f - 4, 0.015, 3 - r),
+              new T.Vector3(f - 2, 0.015, 3 - r),
+              new T.Vector3(f - 2, 0.015, 5 - r),
+              new T.Vector3(f - 4, 0.015, 5 - r),
+            ]),
+            new T.LineBasicMaterial({
+              color: unit.shields > 0 ? 0x8edfff : 0x6b7c8f,
+              transparent: true,
+              opacity: 0.9,
+            }),
+          );
+          line.renderOrder = 2;
+          giantMarks.add(line);
+        }
+      }
       pieceTextures.forEach((t) => {
         if (
           !t.userData.loaded &&
@@ -608,7 +719,9 @@ export default function ThreeBoard(props: Props) {
       const alignBillboard = (obj: T.Object3D) => {
         if (obj.userData.billboard && obj instanceof T.Mesh) {
           const texture = obj.userData.texture as T.CanvasTexture;
+          // Items report their own visible-bottom ratio; chess pieces use the 32x40 grid.
           const bottom =
+            obj.userData.bottomRatio ??
             Number(
               (texture.image as HTMLCanvasElement).dataset.pixelBottom || 38,
             ) / 40;
@@ -643,23 +756,34 @@ export default function ThreeBoard(props: Props) {
         h.group.rotation.z = -0.62 * slide;
       });
       // Lights down on the room, up on the featured pieces.
+      const room = { hemi: 3, sun: 1.65, rim: 0.4, hero: 0, victim: 0 };
       const want = !show
-        ? { hemi: 3, sun: 1.65, rim: 0.4, hero: 0, victim: 0 }
-        : show.kind === "promotion"
+        ? room
+        : show.kind === "obelisk"
           ? p.beat.phase === "out"
-            ? { hemi: 3, sun: 1.65, rim: 0.4, hero: 0, victim: 0 }
-            : p.beat.swapped
-              ? { hemi: 1.5, sun: 0.9, rim: 1.2, hero: 7, victim: 0 }
-              : p.beat.phase === "ascend"
-                ? { hemi: 0.75, sun: 0.35, rim: 0.8, hero: 9, victim: 0 }
-                : { hemi: 1.3, sun: 0.7, rim: 0.6, hero: 4, victim: 0 }
-          : p.beat.phase === "out"
-            ? { hemi: 3, sun: 1.65, rim: 0.4, hero: 0, victim: 0 }
-            : p.beat.slain
-              ? { hemi: 0.6, sun: 0.3, rim: 0.3, hero: 3, victim: 10 }
-              : p.beat.phase === "strobe"
-                ? { hemi: 0.45, sun: 0.2, rim: 0.9, hero: 2, victim: 8 }
-                : { hemi: 1.1, sun: 0.55, rim: 0.7, hero: 4, victim: 5 };
+            ? room
+            : p.beat.phase === "ascend"
+              ? { hemi: 1.1, sun: 0.5, rim: 1, hero: 8, victim: 0 }
+              : { hemi: 1.4, sun: 0.7, rim: 0.7, hero: 5, victim: 0 }
+          : show.kind === "tingqiao"
+            ? p.beat.phase === "out"
+              ? room
+              : { hemi: 1.1, sun: 0.6, rim: 1, hero: 5, victim: 0 }
+            : show.kind === "promotion"
+              ? p.beat.phase === "out"
+                ? room
+                : p.beat.swapped
+                  ? { hemi: 1.5, sun: 0.9, rim: 1.2, hero: 7, victim: 0 }
+                  : p.beat.phase === "ascend"
+                    ? { hemi: 0.75, sun: 0.35, rim: 0.8, hero: 9, victim: 0 }
+                    : { hemi: 1.3, sun: 0.7, rim: 0.6, hero: 4, victim: 0 }
+              : p.beat.phase === "out"
+                ? room
+                : p.beat.slain
+                  ? { hemi: 0.6, sun: 0.3, rim: 0.3, hero: 3, victim: 10 }
+                  : p.beat.phase === "strobe"
+                    ? { hemi: 0.45, sun: 0.2, rim: 0.9, hero: 2, victim: 8 }
+                    : { hemi: 1.1, sun: 0.55, rim: 0.7, hero: 4, victim: 5 };
       const follow = 1 - Math.exp(-dt * 5);
       for (const key of Object.keys(lights) as (keyof typeof lights)[])
         lights[key] += (want[key] - lights[key]) * follow;
@@ -680,8 +804,13 @@ export default function ThreeBoard(props: Props) {
               ? 0xffd27a
               : 0x9fd4ff,
         );
-        heroLight.position.copy(squarePosition(p.show.square)).setY(0.9);
-        if (p.show.victim)
+        heroLight.position.copy(squarePosition(p.show.square));
+        if (p.show.kind === "obelisk") {
+          heroLight.position.x += 0.5;
+          heroLight.position.z += OBELISK_Z_OFFSET;
+        }
+        heroLight.position.setY(0.9);
+        if (p.show.kind === "checkmate" && p.show.victim)
           victimLight.position.copy(squarePosition(p.show.victim)).setY(0.75);
       }
       element.dataset.lights = lights.hero > 0.5 ? "stage" : "room";
@@ -731,6 +860,11 @@ export default function ThreeBoard(props: Props) {
             </span>
           )),
         )}
+        {(Object.keys(sprites) as GridSpriteName[]).map((item) => (
+          <span key={item} data-art={ITEM_ART_COLOR + item}>
+            <ItemCanvas item={item} />
+          </span>
+        ))}
       </div>
       <canvas
         className="three-board"

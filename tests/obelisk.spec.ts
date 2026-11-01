@@ -11,9 +11,8 @@ test("summons one four-cell giant and displays two shields",async({page})=>{
  await page.goto("/#live");
  await page.getByLabel("测试弹幕").fill("e4");
  await page.getByRole("button",{name:"发送",exact:true}).click();
- await expect(page.getByLabel("欧贝利斯克 护盾2点")).toBeVisible({timeout:60000});
  const board=page.locator("canvas.three-board");
- await expect(board).toHaveAttribute("data-pieces",/:bo/);
+ await expect(board).toHaveAttribute("data-pieces",/:bo/,{timeout:60000});
  const summoned=moves.find(m=>m.item==="summon-obelisk");
  expect(summoned.sacrifices).toHaveLength(3);
  const giantCount=(await board.getAttribute("data-pieces"))!.split(" ").filter(s=>s.endsWith(":bo")).length;

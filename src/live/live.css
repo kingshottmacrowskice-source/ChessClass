@@ -894,3 +894,69 @@
   max-width: 100%;
   height: auto;
 }
+
+/* ---------- 限时免费道具横幅 ---------- */
+.free-item-banner {
+  margin: 0 0 22px;
+  padding: 14px 16px;
+  border: 2px solid #b8860b;
+  background: #fdf3d7;
+  box-shadow: 0 3px 8px #8b451326;
+  font-size: 0.85em;
+  line-height: 1.6;
+  letter-spacing: 0.04em;
+}
+.free-item-banner .free-item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.free-item-banner .free-item-tag {
+  background: #b8860b;
+  color: #fff8e7;
+  padding: 2px 8px;
+  letter-spacing: 0.12em;
+  font-size: 0.85em;
+  white-space: nowrap;
+}
+.free-item-banner .free-item-countdown {
+  font-variant-numeric: tabular-nums;
+  font-weight: bold;
+  color: #7a4b00;
+  background: #fff8e7;
+  border: 1px solid #b8860b;
+  padding: 1px 8px;
+  white-space: nowrap;
+}
+.free-item-banner .free-item-name {
+  margin: 8px 0 2px;
+  font-size: 1.35em;
+  font-weight: bold;
+  color: #7a4b00;
+}
+.free-item-banner .free-item-how {
+  margin: 4px 0 0;
+  color: #603518;
+  overflow-wrap: anywhere;
+}
+.free-item-banner .free-item-note {
+  margin: 2px 0 0;
+  color: #8a6238;
+  font-size: 0.9em;
+}
+.free-item-banner.taken {
+  border-color: #a17b54;
+  background: #e8d5c0;
+  opacity: 0.85;
+}
+.free-item-banner.taken .free-item-tag,
+.free-item-banner.taken .free-item-countdown {
+  background: #a17b54;
+  border-color: #a17b54;
+  color: #fff8e7;
+}
+.free-item-banner.taken .free-item-name {
+  color: #5c4a35;
+}

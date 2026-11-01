@@ -1,4 +1,4 @@
-import { PIECE_FORWARD_OFFSET } from "./boardView";
+import { OBELISK_Z_OFFSET, PIECE_FORWARD_OFFSET } from "./boardView";
 import {
   boardViews,
   dollyFor,
@@ -8,7 +8,7 @@ import {
 } from "./camera";
 import { squarePoint } from "./choreography";
 import { script, type Beat, type CinemaShow, type Cue } from "./cinema";
-import type { FxApi } from "./fx";
+import { pieceColors, type FxApi } from "./fx";
 import { MOVE_MS } from "./transition";
 
 type Project = (
@@ -142,10 +142,23 @@ export class CinemaShot {
     return { floor, x: floor.x / 12.5 - 4, z: floor.y / 12.5 - 4 };
   }
 
+  /** The featured piece's centre: the Obelisk spans 2×2 cells, so look at its middle. */
+  private heroSpot(show: CinemaShow): Spot {
+    const at = this.at(show.square);
+    if (show.kind !== "obelisk") return at;
+    const x = at.x + 0.5,
+      z = at.z + OBELISK_Z_OFFSET;
+    return {
+      floor: { x: (x + 4) * 12.5, y: (z + 4) * 12.5 },
+      x,
+      z,
+    };
+  }
+
   private cue(c: Cue, show: CinemaShow, token: number) {
     const f = this.deps.fx(),
       cam = this.deps.camera;
-    const hero = this.at(show.square),
+    const hero = this.heroSpot(show),
       victim = show.victim ? this.at(show.victim) : null;
     const on = (a: Spot, h: number) => ({ ...a.floor, h });
     const later = (ms: number, fn: () => void) =>
@@ -399,6 +412,92 @@ export class CinemaShot {
         });
         f?.burst(on(victim, 0.6), "spark", { count: 16 });
         break;
+
+      // ---------------- obelisk ----------------
+      case "emerge": {
+        this.grade("gold");
+        cam.handheld(0.4);
+        // The soft dolly already framed the front; tilt up so the whole Obelisk
+        // reads as rising behind the actor who stays in the foreground.
+        void cam.focus(
+          shot(hero, {
+            height: 0.9,
+            distance: 4.4,
+            elevation: -0.04,
+            azimuth: 0,
+            fov: 36,
+          }),
+          1600,
+          "inOut",
+        );
+        // Pixel particles where the giant meets the ground: gold dust and sparks.
+        const base = on(hero, 0);
+        every(8, 170, () => {
+          f?.burst(base, "dust", {
+            count: 10,
+            colors: ["#ffe9a8", "#f4c765", "#d9a441", "#fff6d8"],
+          });
+          f?.burst(base, "spark", { count: 5 });
+        });
+        later(120, () => cam.shake(1.6));
+        later(700, () => cam.shake(1.0));
+        later(1300, () => cam.shake(0.6));
+        break;
+      }
+
+      // ---------------- tingqiao ----------------
+      case "counter": {
+        this.grade("cold");
+        cam.handheld(0.2);
+        const guard = hero;
+        const atk = show.victim ? this.at(show.victim) : null;
+        const mid = atk
+          ? { x: (guard.x + atk.x) / 2, z: (guard.z + atk.z) / 2 }
+          : guard;
+        const gap = atk ? Math.hypot(guard.x - atk.x, guard.z - atk.z) : 0;
+        void cam.focus(
+          shot(mid, {
+            height: 0.55,
+            distance: Math.max(3.6, gap + 3),
+            elevation: 0.1,
+            azimuth: cam.pose.azimuth,
+            fov: 30,
+          }),
+          420,
+          "in",
+        );
+        f?.ring(on(guard, 0.5), "#80eaff");
+        break;
+      }
+      case "rebound": {
+        this.grade("cold");
+        cam.handheld(0.3);
+        const guard = hero;
+        const atk = show.victim ? this.at(show.victim) : null;
+        if (atk) {
+          f?.burst(on(atk, 0.5), "shards", {
+            count: 28,
+            colors: pieceColors(show.by === "w" ? "b" : "w"),
+          });
+          f?.burst(on(atk, 0.5), "spark", { count: 10 });
+          f?.ring(on(atk, 0.5), "#b58aff");
+        }
+        f?.ring(on(guard, 0.5), "#80eaff");
+        f?.text(on(guard, 0.7), "听桥！", "hit");
+        cam.shake(1.3);
+        void cam.focus(
+          shot(guard, {
+            height: 0.6,
+            distance: 2.9,
+            elevation: 0.05,
+            azimuth: cam.pose.azimuth,
+            fov: 30,
+          }),
+          760,
+          "inOut",
+        );
+        break;
+      }
 
       case "settle":
         this.grade(null);

@@ -70,3 +70,36 @@ it("prioritizes check and mate over capture, with cached bilingual reactions", a
     }
   }
 });
+
+it("names cannon and obelisk captures by their real identity, not as rooks", () => {
+  for (const [capturedKind, cn, ja] of [
+    ["c", "炮", "カノン"],
+    ["o", "巨神兵", "オベリスク"],
+  ] as const) {
+    const lost = moveReaction({
+      color: "w",
+      piece: "r",
+      captured: "r",
+      capturedKind,
+      to: "d5",
+      san: "Rxd5",
+    });
+    expect(lost.kind).toBe("lostPiece");
+    expect(lost.text).toContain(cn);
+    expect(lost.text).not.toContain("车");
+    expect(lost.japanese).toContain(ja);
+
+    const captured = moveReaction({
+      color: "b",
+      piece: "r",
+      captured: "r",
+      capturedKind,
+      to: "d5",
+      san: "Rxd5",
+    });
+    expect(captured.kind).toBe("myCapture");
+    expect(captured.text).not.toContain("车");
+    expect(captured.japanese).not.toContain("ルーク");
+  }
+});
+

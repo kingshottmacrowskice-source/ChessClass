@@ -178,40 +178,47 @@ export function doomCandidates(
   check = (g: Chess) => g.isCheck(),
 ): DemonAction[] {
   if (game.turn() !== "b") return [];
-  return SQUARES.filter((s) => Number(s[1]) >= 5 && !game.get(s)).flatMap(
-    (target) => {
-      const copy = new Chess(game.fen());
-      for (const square of SQUARES) {
-        const d =
-          Math.abs(square.charCodeAt(0) - target.charCodeAt(0)) +
-          Math.abs(Number(square[1]) - Number(target[1]));
-        if (
-          d > 0 &&
-          d <= 2 &&
-          copy.get(square)?.color === "w" &&
-          copy.get(square)?.type !== "k"
-        )
-          copy.remove(square);
-      }
-      if (check(copy)) return [];
-      const fields = copy.fen().split(" ");
-      fields[1] = "w";
-      fields[3] = "-";
-      fields[4] = "0";
-      fields[5] = String(Number(fields[5]) + 1);
-      return [
-        {
-          kind: "item" as const,
-          item: "doom-shroom" as const,
-          before: game.fen(),
-          after: fields.join(" "),
-          target,
-          piece: "p" as const,
-          label: `毁灭菇 · ${target}`,
-        },
-      ];
-    },
-  );
+  const whites = game
+    .board()
+    .flat()
+    .flatMap((p) => (p && p.color === "w" && p.type !== "k" ? [p] : []));
+  // 黑方毁灭菇不再随机落点：只保留能摧毁最多白方棋子的点位；一个都打不到就不出该道具。
+  let best = 0;
+  let actions: DemonAction[] = [];
+  for (const target of SQUARES) {
+    if (Number(target[1]) < 5 || game.get(target)) continue;
+    const destroyed = whites.filter((p) => {
+      const d =
+        Math.abs(p.square.charCodeAt(0) - target.charCodeAt(0)) +
+        Math.abs(Number(p.square[1]) - Number(target[1]));
+      return d > 0 && d <= 2;
+    });
+    if (!destroyed.length) continue;
+    const copy = new Chess(game.fen());
+    for (const p of destroyed) copy.remove(p.square);
+    if (check(copy)) continue;
+    const fields = copy.fen().split(" ");
+    fields[1] = "w";
+    fields[3] = "-";
+    fields[4] = "0";
+    fields[5] = String(Number(fields[5]) + 1);
+    const action: DemonAction = {
+      kind: "item",
+      item: "doom-shroom",
+      before: game.fen(),
+      after: fields.join(" "),
+      target,
+      piece: "p",
+      label: `毁灭菇 · ${target}`,
+    };
+    if (destroyed.length > best) {
+      best = destroyed.length;
+      actions = [action];
+    } else if (destroyed.length === best) {
+      actions.push(action);
+    }
+  }
+  return actions;
 }
 
 /** Only actually captured pieces are eligible; promotion is not a loss. */

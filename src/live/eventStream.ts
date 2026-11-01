@@ -3,6 +3,7 @@ export type LiveEventKind =
   | "chat"
   | "vote"
   | "move"
+  | "board"
   | "analysis"
   | "entry"
   | "follow"
@@ -11,6 +12,7 @@ export type LiveEventKind =
   | "guard"
   | "superchat"
   | "like"
+  | "free-item"
   | "speech";
 export type LiveEvent = {
   id: number;

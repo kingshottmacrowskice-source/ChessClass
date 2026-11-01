@@ -102,6 +102,7 @@ export function giantMoves(
   game: Chess,
   giants: Giants,
   craters: Set<Square>,
+  cannons: Set<Square> = new Set(),
 ): Move[] {
   const result: Move[] = [];
   for (const [from, giant] of giants) {
@@ -136,6 +137,13 @@ export function giantMoves(
           to,
           piece: "r",
           captured: victim ? game.get(victim)?.type : undefined,
+          capturedKind: victim
+            ? cannons.has(victim)
+              ? "c"
+              : giantAt(giants, victim)
+                ? "o"
+                : undefined
+            : undefined,
           flags: victim ? "c" : "n",
           san: `巨神兵${from}→${to}`,
           lan: from + to,

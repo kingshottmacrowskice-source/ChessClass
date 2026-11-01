@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { Chess } from "chess.js";
-import { decideDemonTurn, DEMON_AI } from "./demonAI";
-import { demonRules, standardRules } from "./rules";
+import { decideDemonTurn, DEMON_AI, demonUtility } from "./demonAI";
+import { demonRules, standardRules, DemonRules } from "./rules";
+import { footprint } from "./obelisk";
 
 describe("independent demon game AI", () => {
   it("chooses a legal ordinary move without an engine and leaves the live board untouched", async () => {
@@ -77,3 +78,39 @@ describe("independent demon game AI", () => {
     expect(() => standardRules.play(game, "a8a1")).toThrow();
   });
 });
+
+describe("demonUtility values special units", () => {
+  it("prices a shieldless attacked giant as nearly lost, not as an ordinary rook", () => {
+    const attacked = new Chess("7k/8/8/8/8/8/8/K2R4 w - - 0 1");
+    const ra = new DemonRules();
+    footprint("d5").forEach((s) => attacked.put({ type: "r", color: "b" }, s));
+    ra.giants.set("d5", { color: "b", shields: 0, origin: "summon-item" });
+
+    const safe = new Chess("7k/8/8/8/8/8/8/KR6 w - - 0 1");
+    const rs = new DemonRules();
+    footprint("d5").forEach((s) => safe.put({ type: "r", color: "b" }, s));
+    rs.giants.set("d5", { color: "b", shields: 0, origin: "summon-item" });
+
+    // Same material and near-identical rook placement; only the attack differs.
+    const drop = demonUtility(safe, rs) - demonUtility(attacked, ra);
+    expect(drop).toBeGreaterThan(300);
+  });
+
+  it("prices a shielded attacked giant by the shield it risks, not a full capture", () => {
+    const attacked = new Chess("7k/8/8/8/8/8/8/K2R4 w - - 0 1");
+    const ra = new DemonRules();
+    footprint("d5").forEach((s) => attacked.put({ type: "r", color: "b" }, s));
+    ra.giants.set("d5", { color: "b", shields: 2, origin: "summon-item" });
+
+    const safe = new Chess("7k/8/8/8/8/8/8/KR6 w - - 0 1");
+    const rs = new DemonRules();
+    footprint("d5").forEach((s) => safe.put({ type: "r", color: "b" }, s));
+    rs.giants.set("d5", { color: "b", shields: 2, origin: "summon-item" });
+
+    // Shields absorb the hit, so the risk is a shield (180), not the whole unit.
+    const drop = demonUtility(safe, rs) - demonUtility(attacked, ra);
+    expect(drop).toBeGreaterThan(0);
+    expect(drop).toBeLessThan(200);
+  });
+});
+

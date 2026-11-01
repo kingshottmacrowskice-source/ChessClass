@@ -8,3 +8,5 @@ export const boardAngle = (value: unknown) =>
 
 /** Visual offset in squares, toward White; logical square coordinates stay unchanged. */
 export const PIECE_FORWARD_OFFSET = 1 / 6;
+/** z-offset of the Obelisk from its anchor square (2×2 centre, then 1/3 of a square down toward White). */
+export const OBELISK_Z_OFFSET = -1 / 2 + 1 / 3;

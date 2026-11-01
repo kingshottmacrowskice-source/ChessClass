@@ -52,3 +52,12 @@
     animation: none;
   }
 }
+.bombardment-icon {
+  display: inline-block;
+  vertical-align: middle;
+  margin-right: 5px;
+}
+.bombardment-icon .item-sprite {
+  width: 100%;
+  height: 100%;
+}

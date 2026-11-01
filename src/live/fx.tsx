@@ -7,6 +7,8 @@ import {
   type RefObject,
 } from "react";
 import ChessPiece from "./ChessPiece";
+import ItemSprite from "./ItemSprite";
+import { isItemSprite } from "./itemSprites";
 import { activeCamera, boardViews } from "./camera";
 import { squarePoint, SQUARE, type Path, type Sample } from "./choreography";
 import type { Point } from "./motion";
@@ -341,6 +343,7 @@ const FxLayer = forwardRef<
         };
         if (kind === "dust") {
           const side = Math.random() < 0.5 ? -1 : 1;
+          const dustColors = o.colors ?? ["#d8c3a0", "#b89a72", "#efe2c8"];
           add({
             ...base,
             vx: side * u * (0.8 + Math.random() * 1.6),
@@ -348,7 +351,7 @@ const FxLayer = forwardRef<
             g: u * 1.5,
             drag: 3,
             size: u * (0.07 + Math.random() * 0.08),
-            color: ["#d8c3a0", "#b89a72", "#efe2c8"][i % 3],
+            color: dustColors[i % dustColors.length],
             life: 420 + Math.random() * 260,
           });
         } else if (kind === "stars") {
@@ -555,7 +558,11 @@ const FxLayer = forwardRef<
                 transform: `translateY(${-lift}px) rotate(${f.s.rot}deg) scale(${f.s.scale})`,
               }}
             >
-              <ChessPiece type={f.piece} color={f.color} />
+              {isItemSprite(f.piece) ? (
+                <ItemSprite item={f.piece} />
+              ) : (
+                <ChessPiece type={f.piece} color={f.color} />
+              )}
             </span>
           </div>
         );

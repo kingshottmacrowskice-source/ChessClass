@@ -221,6 +221,14 @@ export function variantMoves(
           to,
           piece: p.type,
           captured: ep ? "p" : victim?.type,
+          capturedKind:
+            victim && !ep
+              ? cannons.has(to)
+                ? "c"
+                : giantAt(giants, to)
+                  ? "o"
+                  : undefined
+              : undefined,
           promotion,
           flags: flags + (promotion ? "p" : ""),
           before: game.fen(),

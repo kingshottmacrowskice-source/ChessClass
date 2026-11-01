@@ -4,6 +4,11 @@ import {
   defaultBehaviorWeights,
   defaultItemWeights,
 } from "./demonWeights";
+import {
+  freeItemIds,
+  freeItemMeta,
+  defaultFreeItemWeights,
+} from "./freeItem";
 import { useEffect, useRef, useState } from "react";
 import { useLiveSettings, type LiveSettings } from "./liveConfig";
 import { Voice, type VoiceConfig } from "./voice";
@@ -309,6 +314,59 @@ export default function LiveSettings() {
           }
         >
           恢复默认权重
+        </button>
+      </section>
+
+      <section className="settings-panel">
+        <h2>限时免费道具</h2>
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={settings.freeItem}
+            onChange={(e) => set({ freeItem: e.target.checked })}
+          />
+          启用限时免费道具
+        </label>
+        <small>
+          每 5 分钟从下列道具中按权重抽取一件，观众在弹幕里说明棋子或坐标即可抢用，先到先得、每轮仅限一名观众。
+          需要同时开启「魔鱼模式」才生效；巨神兵认领后随机献祭三枚棋子并自动选择召唤位，主动技能不在免费轮换内。
+        </small>
+        <h3>道具出现概率</h3>
+        {freeItemIds.map((id) => (
+          <label key={id}>
+            {freeItemMeta[id].label}
+            <input
+              type="number"
+              aria-label={freeItemMeta[id].label + "出现概率"}
+              min="0"
+              max="100"
+              step="1"
+              value={settings.freeItemWeights[id]}
+              onChange={(e) =>
+                set({
+                  freeItemWeights: {
+                    ...settings.freeItemWeights,
+                    [id]: Math.max(
+                      0,
+                      Math.min(100, Math.round(Number(e.target.value) || 0)),
+                    ),
+                  },
+                })
+              }
+            />
+          </label>
+        ))}
+        <small>
+          权重范围0–100，不必合计100；0表示该道具不会出现，全部为0时本轮免费道具暂停。
+          例如仅启用毁灭菇与召唤炮并设为1、2，二者出现比例约为33%、67%。
+        </small>
+        <button
+          type="button"
+          onClick={() =>
+            set({ freeItemWeights: { ...defaultFreeItemWeights } })
+          }
+        >
+          恢复默认概率
         </button>
       </section>
 

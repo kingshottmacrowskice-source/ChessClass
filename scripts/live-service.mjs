@@ -163,6 +163,8 @@ export default function livePlugin() {
             demonChance: "number",
             demonBehaviorWeights: "object",
             demonItemWeights: "object",
+            freeItem: "boolean",
+            freeItemWeights: "object",
             commentaryRate: "number",
             ai: "boolean",
             autoConnect: "boolean",
@@ -186,6 +188,10 @@ export default function livePlugin() {
             ["demonBehaviorWeights", ["destroy", "movement", "item", "skill"]],
             [
               "demonItemWeights",
+              ["doom-shroom", "monster-reborn", "summon-cannon", "tingqiao-stone", "londinium-artillery", "summon-obelisk"],
+            ],
+            [
+              "freeItemWeights",
               ["doom-shroom", "monster-reborn", "summon-cannon", "tingqiao-stone", "londinium-artillery", "summon-obelisk"],
             ],
           ]) {
@@ -223,7 +229,7 @@ export default function livePlugin() {
           const write = writes.then(async () => {
             const previous = await read();
             const settings = { ...previous, ...patch };
-            for (const field of ["demonBehaviorWeights", "demonItemWeights"]) {
+            for (const field of ["demonBehaviorWeights", "demonItemWeights", "freeItemWeights"]) {
               if (Object.hasOwn(patch, field))
                 settings[field] = {
                   ...(previous?.[field] || {}),
